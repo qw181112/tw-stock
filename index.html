@@ -236,8 +236,8 @@
             <div class="flex flex-wrap items-center gap-2">
               <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 text-xs font-medium text-slate-700 cursor-pointer">
                 <input type="checkbox" id="pf-fee-toggle" class="rounded border-slate-300" />
-                <span>扣預估稅費</span>
-                <input id="pf-fee-discount" type="number" min="0.1" max="1" step="0.05" value="0.6" class="w-12 rounded border border-slate-300 bg-white px-1 py-0.5 text-center text-xs font-semibold" title="手續費折數（6折填0.6）" />
+                <span>扣賣出稅費</span>
+                <input id="pf-fee-discount" type="number" min="0.1" max="1" step="0.05" value="1" class="w-12 rounded border border-slate-300 bg-white px-1 py-0.5 text-center text-xs font-semibold" title="賣出手續費折數（對齊元大填1，6折填0.6）" />
                 <span>折</span>
               </label>
               <button id="pf-refresh-all-btn" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold">
@@ -616,7 +616,7 @@
       ],
       activeGroupId: 'g1',
       includeFees: false,
-      feeDiscount: 0.6,
+      feeDiscount: 1.0,
       portfolio: [],
       chipsByCode: {},
       updatedAt: 0,
@@ -1229,6 +1229,7 @@ function doPost(e) {
     function renderPortfolio() {
       let totalCost = 0;
       let totalVal = 0;
+      let totalPnlSum = 0;
       const container = document.getElementById('pf-list-container');
       container.innerHTML = '';
 
@@ -1259,17 +1260,18 @@ function doPost(e) {
           const val = h.shares * currPrice;
           let feeAndTax = 0;
           if (state.includeFees) {
-            const buyFee = Math.floor(rawCost * 0.001425 * state.feeDiscount);
+            // Yuanta avgCost already includes buy fee; deduct estimated sell fee + sell tax
             const sellFee = Math.floor(val * 0.001425 * state.feeDiscount);
             const taxRate = isEtf(h.code, stock ? stock.sector : (meta.sector || '')) ? 0.001 : 0.003;
             const sellTax = Math.floor(val * taxRate);
-            feeAndTax = buyFee + sellFee + sellTax;
+            feeAndTax = sellFee + sellTax;
           }
           const cost = rawCost;
           const pnl = val - cost - feeAndTax;
           const roi = cost > 0 ? (pnl / cost) * 100 : 0;
           totalCost += cost;
           totalVal += val;
+          totalPnlSum += pnl;
 
           const pnlCls = pnl > 0 ? 'text-red-600' : (pnl < 0 ? 'text-emerald-600' : 'text-slate-700');
           const sign = pnl > 0 ? '+' : '';
@@ -1421,7 +1423,7 @@ function doPost(e) {
         });
       }
 
-      const totalPnl = totalVal - totalCost;
+      const totalPnl = state.portfolio.length > 0 ? totalPnlSum : 0;
       const totalRoi = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
       const sign = totalPnl > 0 ? '+' : '';
       const cls = totalPnl > 0 ? 'text-red-600' : (totalPnl < 0 ? 'text-emerald-600' : 'text-slate-900');
