@@ -135,7 +135,10 @@
           </svg>
         </div>
         <div>
-          <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
+          <div class="flex items-center gap-1.5">
+            <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
+            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.0</span>
+          </div>
           <p id="sync-status-line" class="text-[11px] text-slate-500">正在同步最新 1 年期日線與大盤數據...</p>
         </div>
       </div>
@@ -2017,8 +2020,9 @@ function doPost(e) {
         if (remoteTs > 0) state.updatedAt = remoteTs;
         saveStorage(false);
         if (!silent) {
-          gsStatus.textContent = '已成功從 Google Sheets 同步最新持股與自選清單！';
-          showToast('已從 Google Sheets 載入資料');
+          const tsText = remoteTs > 0 ? new Date(remoteTs).toLocaleTimeString('zh-TW', { hour12: false }) : '未知';
+          gsStatus.textContent = `已同步！持股 ${state.portfolio.length} 筆、自選 ${state.watchlist.length} 檔（雲端時間：${tsText}）`;
+          showToast(`已載入 ${state.portfolio.length} 筆持股`);
         }
         return true;
       } catch (e) {
