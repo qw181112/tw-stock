@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>台股盤後復盤 & 明日策略助手</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230f172a'/%3E%3Cpath d='M14 44L26 32L35 38L50 18' stroke='%23ef4444' stroke-width='5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Cpath d='M41 18H50V27' stroke='%23ef4444' stroke-width='5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E" />
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
@@ -103,8 +104,11 @@
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
       <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-          TW
+        <div class="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-sm shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" class="w-7 h-7">
+            <path d="M12 44L25 31L35 38L52 17" stroke="#ef4444" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M42 17H52V27" stroke="#ef4444" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
         </div>
         <div>
           <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
@@ -229,10 +233,18 @@
               <h2 class="text-sm sm:text-base font-bold text-slate-900">新增 / 更新持股</h2>
               <p class="text-xs text-slate-500">輸入代號、股數（1張 = 1,000股）與投資先生顯示之買入均價</p>
             </div>
-            <button id="pf-refresh-all-btn" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-              <span>更新持股收盤價</span>
-            </button>
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 text-xs font-medium text-slate-700 cursor-pointer">
+                <input type="checkbox" id="pf-fee-toggle" class="rounded border-slate-300" />
+                <span>扣預估稅費</span>
+                <input id="pf-fee-discount" type="number" min="0.1" max="1" step="0.05" value="0.6" class="w-12 rounded border border-slate-300 bg-white px-1 py-0.5 text-center text-xs font-semibold" title="手續費折數（6折填0.6）" />
+                <span>折</span>
+              </label>
+              <button id="pf-refresh-all-btn" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span>更新持股收盤價</span>
+              </button>
+            </div>
           </div>
 
           <form id="pf-form" class="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -429,6 +441,9 @@
           </button>
         </div>
 
+        <!-- Watchlist Group Tabs -->
+        <div class="flex flex-wrap items-center gap-1.5 pt-1" id="wl-groups-bar"></div>
+
         <form id="wl-add-form" class="space-y-1">
           <div class="flex gap-2">
             <input id="wl-add-input" type="text" placeholder="輸入要追蹤的股票代號，例如 2308、00878、2891" class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -595,8 +610,16 @@
       activeCode: '2330',
       strategyCat: 'ALL',
       watchlist: ['2330', '2317', '2454', '2881', '0050'],
+      watchlistGroups: [
+        { id: 'g1', name: '我的投資組合 1', codes: ['2330', '2317', '2454', '2881', '0050'] },
+        { id: 'g2', name: '我的投資組合 2', codes: ['0056', '00878', '00919'] }
+      ],
+      activeGroupId: 'g1',
+      includeFees: false,
+      feeDiscount: 0.6,
       portfolio: [],
       chipsByCode: {},
+      updatedAt: 0,
       gsUrl: ''
     };
 
@@ -662,27 +685,56 @@ function doPost(e) {
           const gs = localStorage.getItem('tw_v4_gs_url') || localStorage.getItem('tw_v3_gs_url');
           if (gs) state.gsUrl = gs;
         }
+        const wg = localStorage.getItem('tw_v4_watchlist_groups');
+        if (wg) {
+          const parsedWg = JSON.parse(wg);
+          if (Array.isArray(parsedWg) && parsedWg.length > 0) {
+            state.watchlistGroups = parsedWg;
+          }
+        }
         const w = localStorage.getItem('tw_v4_watchlist') || localStorage.getItem('tw_v3_watchlist');
         if (w) {
           const parsed = JSON.parse(w);
-          if (Array.isArray(parsed) && parsed.length > 0) state.watchlist = parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            state.watchlist = parsed;
+            if (!wg && state.watchlistGroups[0]) state.watchlistGroups[0].codes = parsed;
+          }
         }
         const p = localStorage.getItem('tw_v4_portfolio') || localStorage.getItem('tw_v3_portfolio');
         if (p) {
           const parsed = JSON.parse(p);
           if (Array.isArray(parsed)) state.portfolio = parsed;
         }
+        const feeCfg = localStorage.getItem('tw_v4_fee_cfg');
+        if (feeCfg) {
+          const fc = JSON.parse(feeCfg);
+          state.includeFees = !!fc.includeFees;
+          if (fc.feeDiscount > 0) state.feeDiscount = Number(fc.feeDiscount);
+        }
+        const ts = Number(localStorage.getItem('tw_v4_updated_at') || 0);
+        if (ts > 0) state.updatedAt = ts;
       } catch (e) {}
     }
 
+    let __gsPushTimer = null;
     function saveStorage(autoSync = false) {
+      if (autoSync) {
+        state.updatedAt = Date.now();
+      }
       try {
+        state.watchlist = Array.from(new Set(state.watchlistGroups.flatMap(g => g.codes)));
         localStorage.setItem('tw_v4_watchlist', JSON.stringify(state.watchlist));
+        localStorage.setItem('tw_v4_watchlist_groups', JSON.stringify(state.watchlistGroups));
         localStorage.setItem('tw_v4_portfolio', JSON.stringify(state.portfolio));
+        localStorage.setItem('tw_v4_fee_cfg', JSON.stringify({ includeFees: state.includeFees, feeDiscount: state.feeDiscount }));
+        localStorage.setItem('tw_v4_updated_at', String(state.updatedAt || 0));
         localStorage.setItem('tw_v4_gs_url', state.gsUrl || '');
       } catch (e) {}
       if (autoSync && state.gsUrl) {
-        pushToGoogleSheets(true);
+        clearTimeout(__gsPushTimer);
+        __gsPushTimer = setTimeout(() => {
+          pushToGoogleSheets(true);
+        }, 500);
       }
     }
 
@@ -755,15 +807,16 @@ function doPost(e) {
       return out;
     }
 
-    function calcKD(arr, period = 9) {
+    function calcKD(arr, period = 9, highs = null, lows = null) {
       const kArr = arr.map(() => null);
       const dArr = arr.map(() => null);
       let k = 50, d = 50;
+      const hSrc = highs && highs.length === arr.length ? highs : arr;
+      const lSrc = lows && lows.length === arr.length ? lows : arr;
       for (let i = 0; i < arr.length; i++) {
         const start = Math.max(0, i - period + 1);
-        const slice = arr.slice(start, i + 1);
-        const low = Math.min(...slice);
-        const high = Math.max(...slice);
+        const low = Math.min(...lSrc.slice(start, i + 1));
+        const high = Math.max(...hSrc.slice(start, i + 1));
         const rsv = high === low ? 50 : ((arr[i] - low) / (high - low)) * 100;
         k = (2 / 3) * k + (1 / 3) * rsv;
         d = (2 / 3) * d + (1 / 3) * k;
@@ -799,7 +852,7 @@ function doPost(e) {
       const maMidArr = calcMA(prices, Math.min(maMidPeriod, prices.length));
       const maLongArr = calcMA(prices, Math.min(maLongPeriod, prices.length));
       const rsiArr = calcRSI(prices, Math.min(6, Math.max(2, prices.length - 1)));
-      const { kArr, dArr } = calcKD(prices);
+      const { kArr, dArr } = calcKD(prices, 9, stock.highs || null, stock.lows || null);
 
       const maShort = maShortArr[maShortArr.length - 1];
       const maMid = maMidArr[maMidArr.length - 1];
@@ -920,6 +973,8 @@ function doPost(e) {
 
       const labels = rows.map(r => r.date.slice(2));
       const prices = rows.map(r => Number(r.close));
+      const highs = rows.map(r => Number(r.max || r.close));
+      const lows = rows.map(r => Number(r.min || r.close));
       const latest = prices[prices.length - 1];
       const lastDate = rows[rows.length - 1].date;
       const meta = STOCK_META[ticker] || mapIndustryCategory('', ticker);
@@ -934,7 +989,9 @@ function doPost(e) {
         isDaily: true,
         lastDate,
         labels,
-        prices
+        prices,
+        highs,
+        lows
       };
       return STOCK_DB[ticker];
     }
@@ -1198,9 +1255,18 @@ function doPost(e) {
           const stock = STOCK_DB[h.code];
           const meta = STOCK_META[h.code] || {};
           const currPrice = stock ? stock.price : h.avgCost;
-          const cost = h.shares * h.avgCost;
+          const rawCost = h.shares * h.avgCost;
           const val = h.shares * currPrice;
-          const pnl = val - cost;
+          let feeAndTax = 0;
+          if (state.includeFees) {
+            const buyFee = Math.floor(rawCost * 0.001425 * state.feeDiscount);
+            const sellFee = Math.floor(val * 0.001425 * state.feeDiscount);
+            const taxRate = isEtf(h.code, stock ? stock.sector : (meta.sector || '')) ? 0.001 : 0.003;
+            const sellTax = Math.floor(val * taxRate);
+            feeAndTax = buyFee + sellFee + sellTax;
+          }
+          const cost = rawCost;
+          const pnl = val - cost - feeAndTax;
           const roi = cost > 0 ? (pnl / cost) * 100 : 0;
           totalCost += cost;
           totalVal += val;
@@ -1482,7 +1548,7 @@ function doPost(e) {
       });
 
       const rsi = calcRSI(s.prices, Math.min(6, Math.max(2, s.prices.length - 1))).slice(-sliceN);
-      const { kArr, dArr } = calcKD(s.prices);
+      const { kArr, dArr } = calcKD(s.prices, 9, s.highs || null, s.lows || null);
       if (charts.indOsc) charts.indOsc.destroy();
       charts.indOsc = new Chart(document.getElementById('indOscChart').getContext('2d'), {
         type: 'line',
@@ -1569,16 +1635,109 @@ function doPost(e) {
     }
 
     // ==================== RENDER WATCHLIST ====================
+    function getActiveWatchGroup() {
+      let g = state.watchlistGroups.find(x => x.id === state.activeGroupId);
+      if (!g) {
+        g = state.watchlistGroups[0];
+        state.activeGroupId = g.id;
+      }
+      return g;
+    }
+
     function renderWatchlist() {
       document.getElementById('desktop-watch-count').textContent = state.watchlist.length;
+      const groupsBar = document.getElementById('wl-groups-bar');
+      groupsBar.innerHTML = '';
+
+      state.watchlistGroups.forEach(g => {
+        const isAct = g.id === state.activeGroupId;
+        const wrap = document.createElement('div');
+        wrap.className = `inline-flex items-center rounded-full border text-xs ${
+          isAct ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+        }`;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'px-3 py-1 font-semibold';
+        btn.textContent = `${g.name} (${g.codes.length})`;
+        btn.addEventListener('click', () => {
+          state.activeGroupId = g.id;
+          if (g.codes.length > 0 && !g.codes.includes(state.activeCode)) {
+            state.activeCode = g.codes[0];
+          }
+          renderWatchlist();
+        });
+        wrap.appendChild(btn);
+
+        if (isAct) {
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.className = 'pr-2.5 pl-0.5 text-[11px] opacity-80 hover:opacity-100';
+          editBtn.textContent = '✎';
+          editBtn.title = '重新命名此組合';
+          editBtn.addEventListener('click', () => {
+            const inputBox = document.getElementById('wl-rename-box');
+            const nameInput = document.getElementById('wl-rename-input');
+            if (inputBox && nameInput) {
+              nameInput.value = g.name;
+              inputBox.classList.remove('hidden');
+              nameInput.focus();
+            }
+          });
+          wrap.appendChild(editBtn);
+        }
+        groupsBar.appendChild(wrap);
+      });
+
+      const addGrpBtn = document.createElement('button');
+      addGrpBtn.type = 'button';
+      addGrpBtn.className = 'px-2.5 py-1 rounded-full border border-dashed border-slate-300 text-xs font-medium text-slate-600 hover:bg-slate-50';
+      addGrpBtn.textContent = '＋ 新增組合';
+      addGrpBtn.addEventListener('click', () => {
+        const newId = 'g' + Date.now();
+        const newNum = state.watchlistGroups.length + 1;
+        state.watchlistGroups.push({ id: newId, name: `我的投資組合 ${newNum}`, codes: [] });
+        state.activeGroupId = newId;
+        saveStorage(true);
+        renderWatchlist();
+      });
+      groupsBar.appendChild(addGrpBtn);
+
+      // Inline rename box (no prompt())
+      let renameBox = document.getElementById('wl-rename-box');
+      if (!renameBox) {
+        renameBox = document.createElement('div');
+        renameBox.id = 'wl-rename-box';
+        renameBox.className = 'hidden flex items-center gap-2 pt-1';
+        renameBox.innerHTML = `
+          <input id="wl-rename-input" type="text" class="rounded-lg border border-slate-300 px-2.5 py-1 text-xs" placeholder="輸入新群組名稱" />
+          <button id="wl-rename-save" type="button" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs font-semibold">確定改名</button>
+          <button id="wl-rename-cancel" type="button" class="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs">取消</button>
+        `;
+        groupsBar.parentNode.insertBefore(renameBox, groupsBar.nextSibling);
+        document.getElementById('wl-rename-save').addEventListener('click', () => {
+          const val = document.getElementById('wl-rename-input').value.trim();
+          if (val) {
+            const ag = getActiveWatchGroup();
+            ag.name = val;
+            saveStorage(true);
+            renderWatchlist();
+          }
+          renameBox.classList.add('hidden');
+        });
+        document.getElementById('wl-rename-cancel').addEventListener('click', () => {
+          renameBox.classList.add('hidden');
+        });
+      }
+
+      const activeGroup = getActiveWatchGroup();
       const grid = document.getElementById('wl-cards-grid');
       grid.innerHTML = '';
 
-      if (state.watchlist.length === 0) {
-        grid.innerHTML = '<p class="text-xs text-slate-400 col-span-full py-4 text-center">目前自選清單為空，請在上方輸入代號新增。</p>';
+      if (activeGroup.codes.length === 0) {
+        grid.innerHTML = '<p class="text-xs text-slate-400 col-span-full py-4 text-center">此投資組合目前為空，請在上方輸入代號新增。</p>';
       }
 
-      state.watchlist.forEach(code => {
+      activeGroup.codes.forEach(code => {
         const s = STOCK_DB[code];
         const meta = STOCK_META[code] || {};
         const name = s ? s.name : (meta.name || code);
@@ -1614,8 +1773,9 @@ function doPost(e) {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const c = btn.dataset.rmWatch;
-          state.watchlist = state.watchlist.filter(x => x !== c);
-          if (state.activeCode === c && state.watchlist.length > 0) state.activeCode = state.watchlist[0];
+          const ag = getActiveWatchGroup();
+          ag.codes = ag.codes.filter(x => x !== c);
+          if (state.activeCode === c && ag.codes.length > 0) state.activeCode = ag.codes[0];
           saveStorage(true);
           renderWatchlist();
           showToast(`已將 ${c} 移出自選清單`);
@@ -1717,7 +1877,7 @@ function doPost(e) {
         gsStatus.textContent = '正在上傳持股與自選清單至 Google Sheets...';
       }
       try {
-        const payload = JSON.stringify({ portfolio: state.portfolio, watchlist: state.watchlist });
+        const payload = JSON.stringify({ portfolio: state.portfolio, watchlist: state.watchlist, watchlistGroups: state.watchlistGroups, updatedAt: state.updatedAt || Date.now() });
         await fetch(state.gsUrl, { method: 'POST', body: payload });
         if (!silent) {
           gsStatus.textContent = '已成功同步上傳至 Google Sheets！';
@@ -1745,8 +1905,19 @@ function doPost(e) {
         const res = await fetch(state.gsUrl);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        const remoteTs = Number(data.updatedAt || 0);
+        if (silent && state.updatedAt && remoteTs && remoteTs < state.updatedAt) {
+          return false;
+        }
         if (Array.isArray(data.portfolio)) state.portfolio = data.portfolio;
-        if (Array.isArray(data.watchlist) && data.watchlist.length > 0) state.watchlist = data.watchlist;
+        if (Array.isArray(data.watchlistGroups) && data.watchlistGroups.length > 0) {
+          state.watchlistGroups = data.watchlistGroups;
+        }
+        if (Array.isArray(data.watchlist) && data.watchlist.length > 0) {
+          state.watchlist = data.watchlist;
+          if (!data.watchlistGroups && state.watchlistGroups[0]) state.watchlistGroups[0].codes = data.watchlist;
+        }
+        if (remoteTs > 0) state.updatedAt = remoteTs;
         saveStorage(false);
         if (!silent) {
           gsStatus.textContent = '已成功從 Google Sheets 同步最新持股與自選清單！';
@@ -1863,6 +2034,24 @@ function doPost(e) {
         }
       });
 
+      const feeToggle = document.getElementById('pf-fee-toggle');
+      const feeDisc = document.getElementById('pf-fee-discount');
+      feeToggle.checked = state.includeFees;
+      feeDisc.value = state.feeDiscount;
+      feeToggle.addEventListener('change', () => {
+        state.includeFees = feeToggle.checked;
+        saveStorage(false);
+        renderPortfolio();
+      });
+      feeDisc.addEventListener('input', () => {
+        const v = Number(feeDisc.value);
+        if (v > 0 && v <= 1) {
+          state.feeDiscount = v;
+          saveStorage(false);
+          if (state.includeFees) renderPortfolio();
+        }
+      });
+
       document.getElementById('refresh-all-eod-btn').addEventListener('click', () => runFullEodSync(true, false));
       document.getElementById('scan-hot-pool-btn').addEventListener('click', () => runFullEodSync(true, true));
 
@@ -1959,10 +2148,11 @@ function doPost(e) {
         const input = document.getElementById('wl-add-input');
         const code = input.value.trim().toUpperCase();
         if (!code) return;
-        if (state.watchlist.includes(code)) {
+        const ag = getActiveWatchGroup();
+        if (ag.codes.includes(code)) {
           state.activeCode = code;
           renderWatchlist();
-          showToast(`${code} 已在自選清單中`);
+          showToast(`${code} 已在此組合中`);
           input.value = '';
           return;
         }
@@ -1972,7 +2162,7 @@ function doPost(e) {
           showToast(`找不到 ${code} 資料，無法加入自選`);
           return;
         }
-        state.watchlist.unshift(code);
+        ag.codes.unshift(code);
         state.activeCode = code;
         saveStorage(true);
         input.value = '';
@@ -2009,6 +2199,31 @@ function doPost(e) {
         runFullEodSync(false, false);
       }
     }
+
+    // Instant cross-tab sync within the same browser
+    window.addEventListener('storage', (e) => {
+      if (['tw_v4_portfolio', 'tw_v4_watchlist_groups', 'tw_v4_watchlist', 'tw_v4_fee_cfg'].includes(e.key)) {
+        loadStorage();
+        const feeToggle = document.getElementById('pf-fee-toggle');
+        const feeDisc = document.getElementById('pf-fee-discount');
+        if (feeToggle) feeToggle.checked = state.includeFees;
+        if (feeDisc) feeDisc.value = state.feeDiscount;
+        switchTab(state.activeTab);
+      }
+    });
+
+    // Auto-pull from Google Sheets when returning to this tab (throttled 10s)
+    let __lastVisPull = 0;
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible' && state.gsUrl) {
+        const now = Date.now();
+        if (now - __lastVisPull > 10000) {
+          __lastVisPull = now;
+          const ok = await pullFromGoogleSheets(true);
+          if (ok) switchTab(state.activeTab);
+        }
+      }
+    });
 
     window.addEventListener('DOMContentLoaded', init);
   </script>
