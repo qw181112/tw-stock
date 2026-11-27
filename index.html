@@ -164,10 +164,15 @@
         <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 class="text-sm sm:text-base font-bold text-slate-900">明日買進 / 加碼觀察清單</h3>
-              <p class="text-xs text-slate-500">以 1 年日線（20MA / 60MA / 240MA 年線）與近 20 日支撐計算</p>
+              <h3 class="text-sm sm:text-base font-bold text-slate-900">明日買進 / 加碼觀察清單（評分排序）</h3>
+              <p class="text-xs text-slate-500">
+                依年線 / 支撐 / KD / RSI 自動評分，當日結果自動快取省流量 ·
+                <a href="https://www.wantgoo.com/stock/ranking/volume" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">玩股網排行</a>
+              </p>
             </div>
-            <span class="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold">買點與理由</span>
+            <button id="scan-hot-pool-btn" type="button" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold whitespace-nowrap">
+              🔍 掃描 28 檔熱門股評分
+            </button>
           </div>
 
           <!-- 分類篩選標籤 -->
@@ -234,6 +239,7 @@
             <div>
               <label for="pf-code" class="block text-xs font-medium text-slate-600 mb-1">股票代號</label>
               <input id="pf-code" type="text" placeholder="如 2330 或 0050" required class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <p id="pf-code-hint" class="text-[11px] text-blue-600 font-medium mt-1 hidden"></p>
             </div>
             <div>
               <label for="pf-shares" class="block text-xs font-medium text-slate-600 mb-1">持有股數</label>
@@ -273,6 +279,7 @@
             搜尋分析
           </button>
         </div>
+        <p id="search-code-hint" class="text-xs text-blue-600 font-semibold hidden"></p>
         <div class="flex flex-wrap items-center gap-1.5">
           <span class="text-xs text-slate-500 mr-1">熱門代號：</span>
           <button type="button" data-quick="2330" class="quick-search-btn px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-xs font-medium text-slate-700">2330 台積電</button>
@@ -422,11 +429,14 @@
           </button>
         </div>
 
-        <form id="wl-add-form" class="flex gap-2">
-          <input id="wl-add-input" type="text" placeholder="輸入要追蹤的股票代號，例如 2308、00878、2891" class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <button type="submit" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-semibold whitespace-nowrap">
-            ＋ 新增自選
-          </button>
+        <form id="wl-add-form" class="space-y-1">
+          <div class="flex gap-2">
+            <input id="wl-add-input" type="text" placeholder="輸入要追蹤的股票代號，例如 2308、00878、2891" class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button type="submit" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-semibold whitespace-nowrap">
+              ＋ 新增自選
+            </button>
+          </div>
+          <p id="wl-code-hint" class="text-xs text-blue-600 font-semibold hidden"></p>
         </form>
 
         <div id="wl-cards-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
@@ -495,20 +505,42 @@
     ];
 
     // Expanded representative stocks across ETF, 科技電子, 金融股, 傳產其他
+    const HOT_POOL_CODES = [
+      '0050', '0056', '00878', '00919', '00713', '006208',
+      '2330', '2317', '2454', '2308', '2382', '3231', '2303', '3711', '2357', '2376', '3017', '2345',
+      '2881', '2882', '2891', '2886', '2884', '2892',
+      '2603', '2609', '1519', '1513'
+    ];
+
     const STOCK_META = {
       '0050': { name: '元大台灣50', cat: 'ETF', sector: 'ETF' },
       '0056': { name: '元大高股息', cat: 'ETF', sector: 'ETF' },
       '00878': { name: '國泰永續高股息', cat: 'ETF', sector: 'ETF' },
+      '00919': { name: '群益台灣精選高息', cat: 'ETF', sector: 'ETF' },
+      '00713': { name: '元大台灣高息低波', cat: 'ETF', sector: 'ETF' },
+      '006208': { name: '富邦台50', cat: 'ETF', sector: 'ETF' },
       '2330': { name: '台積電', cat: 'TECH', sector: '科技電子' },
       '2317': { name: '鴻海', cat: 'TECH', sector: '科技電子' },
       '2454': { name: '聯發科', cat: 'TECH', sector: '科技電子' },
       '2308': { name: '台達電', cat: 'TECH', sector: '科技電子' },
       '2382': { name: '廣達', cat: 'TECH', sector: '科技電子' },
+      '3231': { name: '緯創', cat: 'TECH', sector: '科技電子' },
+      '2303': { name: '聯電', cat: 'TECH', sector: '科技電子' },
+      '3711': { name: '日月光投控', cat: 'TECH', sector: '科技電子' },
+      '2357': { name: '華碩', cat: 'TECH', sector: '科技電子' },
+      '2376': { name: '技嘉', cat: 'TECH', sector: '科技電子' },
+      '3017': { name: '奇鋐', cat: 'TECH', sector: '科技電子' },
+      '2345': { name: '智邦', cat: 'TECH', sector: '科技電子' },
       '2881': { name: '富邦金', cat: 'FIN', sector: '金融股' },
       '2882': { name: '國泰金', cat: 'FIN', sector: '金融股' },
       '2891': { name: '中信金', cat: 'FIN', sector: '金融股' },
+      '2886': { name: '兆豐金', cat: 'FIN', sector: '金融股' },
+      '2884': { name: '玉山金', cat: 'FIN', sector: '金融股' },
+      '2892': { name: '第一金', cat: 'FIN', sector: '金融股' },
       '2603': { name: '長榮', cat: 'TRAD', sector: '傳產其他' },
-      '1519': { name: '華城', cat: 'TRAD', sector: '傳產其他' }
+      '2609': { name: '陽明', cat: 'TRAD', sector: '傳產其他' },
+      '1519': { name: '華城', cat: 'TRAD', sector: '傳產其他' },
+      '1513': { name: '中興電', cat: 'TRAD', sector: '傳產其他' }
     };
 
     const STOCK_DB = {
@@ -654,6 +686,51 @@ function doPost(e) {
       }
     }
 
+    function getTodayStr() {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function saveMarketCache() {
+      try {
+        const trimmedDb = {};
+        Object.keys(STOCK_DB).forEach(code => {
+          const item = STOCK_DB[code];
+          if (item && item.isDaily) {
+            trimmedDb[code] = {
+              ...item,
+              labels: item.labels.slice(-250),
+              prices: item.prices.slice(-250)
+            };
+          }
+        });
+        localStorage.setItem('tw_v4_market_cache', JSON.stringify({
+          cacheDate: getTodayStr(),
+          marketState,
+          stocks: trimmedDb
+        }));
+      } catch (e) {}
+    }
+
+    function loadMarketCacheIfToday() {
+      try {
+        const raw = localStorage.getItem('tw_v4_market_cache');
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (parsed.cacheDate !== getTodayStr() || !parsed.stocks) return false;
+        Object.assign(marketState, parsed.marketState || {});
+        Object.keys(parsed.stocks).forEach(code => {
+          STOCK_DB[code] = parsed.stocks[code];
+        });
+        return Object.keys(parsed.stocks).length > 0;
+      } catch (e) {
+        return false;
+      }
+    }
+
     function calcMA(arr, period) {
       return arr.map((_, idx) => {
         if (idx < period - 1) return null;
@@ -731,15 +808,26 @@ function doPost(e) {
       const latestK = kArr[kArr.length - 1];
       const latestD = dArr[dArr.length - 1];
 
-      // Use tighter 20-day window for daily data so buy zone stays realistic
+      // Volatility-adaptive buy zone based on recent 10/20-day range
       const lookback = stock.isDaily ? Math.min(20, prices.length) : Math.min(4, prices.length);
       const recentSlice = prices.slice(-lookback);
+      const shortSlice = prices.slice(-Math.min(10, prices.length));
       const recentLow = Math.min(...recentSlice);
+      const shortLow = Math.min(...shortSlice);
       const recentHigh = Math.max(...recentSlice);
+      const volPct = recentLow > 0 ? Math.min(0.08, Math.max(0.015, ((recentHigh - recentLow) / recentLow) * 0.25)) : 0.025;
 
-      const anchorSupport = maMid && maMid < curr * 1.05 ? Math.max(recentLow, maMid * 0.98) : recentLow;
-      const buyLow = Number((anchorSupport * 0.985).toFixed(1));
-      const buyHigh = Number((Math.min(curr, (maShort || curr) * 0.995)).toFixed(1));
+      let buyLow, buyHigh;
+      if (maShort && curr > maShort) {
+        // Above 20MA: wait for pullback toward 20MA
+        buyHigh = Number((maShort * (1 + volPct * 0.4)).toFixed(1));
+        buyLow = Number((maShort * (1 - volPct * 0.8)).toFixed(1));
+        if (buyHigh >= curr) buyHigh = Number((curr * 0.985).toFixed(1));
+      } else {
+        // Below 20MA: pullback support between 10-day low and adaptive discount below current price
+        buyHigh = Number((curr * (1 - volPct * 0.5)).toFixed(1));
+        buyLow = Number((Math.max(shortLow * 0.98, curr * (1 - volPct * 1.5))).toFixed(1));
+      }
       const safeBuyLow = Math.min(buyLow, buyHigh);
       const safeBuyHigh = Math.max(buyLow, buyHigh);
       const targetSell = Number(Math.max(recentHigh * 1.02, curr * 1.07).toFixed(1));
@@ -774,11 +862,22 @@ function doPost(e) {
         ? `【ETF 長期持有客觀分析】目前位階屬於「${trendLabel}」（${maSummary}）。${reasons.join('、')}。若採長期定期定額或逢低加碼，可參考 ${safeBuyLow}–${safeBuyHigh} 元區間分批配置。`
         : `目前位階屬於「${trendLabel}」（${maSummary}）。依據：${reasons.join('、')}。若回測 ${safeBuyLow}–${safeBuyHigh} 元支撐不破可留意，波段停利目標看 ${targetSell} 元，跌破 ${stopLoss} 元建議防守減碼。`;
 
+      // 0-100 Buy Suitability Score
+      let score = 20;
+      if (maLong && curr >= maLong) score += 25;
+      else if (maLong && curr >= maLong * 0.95) score += 10;
+      const distPct = curr > 0 ? ((curr - safeBuyHigh) / curr) : 0.1;
+      if (distPct <= 0.03) score += 25;
+      else if (distPct <= 0.06) score += 15;
+      if (latestK !== null && latestD !== null && latestK > latestD) score += 15;
+      if (latestRsi !== null && latestRsi <= 60) score += 15;
+      score = Math.min(100, Math.max(10, Math.round(score)));
+
       return {
         etfMode, maShort, maMid, maLong, maShortArr, maMidArr, maLongArr,
         latestRsi, latestK, latestD,
         safeBuyLow, safeBuyHigh, targetSell, stopLoss,
-        trendLabel, maSummary, reasonText, advice
+        trendLabel, maSummary, reasonText, advice, score
       };
     }
 
@@ -974,19 +1073,22 @@ function doPost(e) {
       });
 
       if (filtered.length === 0) {
-        buyList.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">此分類目前無載入標的，請先於搜尋或自選加入該分類股票。</p>';
+        buyList.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">此分類目前無載入標的，請點擊右上角「🔍 掃描 28 檔熱門股評分」。</p>';
       } else {
-        filtered.slice(0, 8).forEach(s => {
-          const a = generateStockAnalysis(s);
+        const ranked = filtered.map(s => ({ s, a: generateStockAnalysis(s) }))
+          .sort((x, y) => y.a.score - x.a.score);
+
+        ranked.slice(0, 10).forEach(({ s, a }) => {
           const staleWarn = !s.isDaily ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">基準資料</span>' : `<span class="text-[10px] text-slate-400">${s.lastDate}</span>`;
+          const scoreCls = a.score >= 75 ? 'bg-red-100 text-red-700' : (a.score >= 55 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600');
           const item = document.createElement('div');
           item.className = 'rounded-xl border border-slate-200 p-3.5 hover:bg-slate-50 space-y-1.5';
           item.innerHTML = `
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div class="flex items-center gap-1.5 flex-wrap">
                 <span class="font-bold text-sm text-slate-900">${s.code} ${s.name}</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${scoreCls}">適合度 ${a.score} 分</span>
                 <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">${s.sector}</span>
-                <span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">${a.trendLabel}</span>
                 ${staleWarn}
               </div>
               <span class="text-sm font-bold text-slate-900 tabular-nums">現價 ${s.price.toLocaleString('zh-TW')} 元</span>
@@ -1107,26 +1209,63 @@ function doPost(e) {
           const sign = pnl > 0 ? '+' : '';
 
           const card = document.createElement('div');
-          card.className = 'rounded-xl border border-slate-200 p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-50';
+          card.dataset.pfIdx = String(idx);
+          card.draggable = true;
+          card.className = 'pf-card cursor-grab active:cursor-grabbing rounded-xl border border-slate-200 p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-50 transition-colors select-none';
           card.innerHTML = `
-            <div>
-              <div class="flex items-center gap-2">
-                <span class="font-bold text-slate-900">${h.code} ${stock ? stock.name : (meta.name || '')}</span>
-                <span class="text-xs text-slate-500">${h.shares.toLocaleString('zh-TW')} 股</span>
+            <div class="flex items-center gap-2.5">
+              <button type="button" class="pf-drag-handle cursor-grab active:cursor-grabbing p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 touch-none" title="按住拖曳調整順序" aria-label="拖曳排序">
+                ⋮⋮
+              </button>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-slate-900">${h.code} ${stock ? stock.name : (meta.name || '')}</span>
+                  <span class="text-xs text-slate-500">${h.shares.toLocaleString('zh-TW')} 股</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-0.5">均價 ${h.avgCost.toLocaleString('zh-TW')} · 現價 ${currPrice.toLocaleString('zh-TW')} <span class="text-[11px] text-slate-400">(${stock && stock.lastDate ? stock.lastDate : '基準價'})</span></p>
               </div>
-              <p class="text-xs text-slate-500 mt-0.5">均價 ${h.avgCost.toLocaleString('zh-TW')} · 現價 ${currPrice.toLocaleString('zh-TW')} <span class="text-[11px] text-slate-400">(${stock && stock.lastDate ? stock.lastDate : '基準價'})</span></p>
             </div>
-            <div class="flex items-center gap-4">
-              <div class="text-right">
+            <div class="flex items-center gap-2 sm:gap-3">
+              <div class="text-right mr-1">
                 <p class="text-sm font-bold tabular-nums ${pnlCls}">${sign}${Math.round(pnl).toLocaleString('zh-TW')} 元</p>
                 <p class="text-xs font-semibold tabular-nums ${pnlCls}">${sign}${roi.toFixed(2)}%</p>
               </div>
-              <button type="button" data-del-idx="${idx}" class="pf-del-btn px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-red-50 hover:text-red-600 text-xs text-slate-600">
-                刪除
-              </button>
+              <div class="flex items-center gap-1">
+                <button type="button" data-up-idx="${idx}" ${idx === 0 ? 'disabled' : ''} class="pf-up-btn px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-xs text-slate-700" title="上移">▲</button>
+                <button type="button" data-down-idx="${idx}" ${idx === state.portfolio.length - 1 ? 'disabled' : ''} class="pf-down-btn px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-xs text-slate-700" title="下移">▼</button>
+                <button type="button" data-del-idx="${idx}" class="pf-del-btn px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-red-50 hover:text-red-600 text-xs text-slate-600">
+                  刪除
+                </button>
+              </div>
             </div>
           `;
           container.appendChild(card);
+        });
+
+        container.querySelectorAll('.pf-up-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.upIdx);
+            if (idx > 0) {
+              const tmp = state.portfolio[idx - 1];
+              state.portfolio[idx - 1] = state.portfolio[idx];
+              state.portfolio[idx] = tmp;
+              saveStorage(true);
+              renderPortfolio();
+            }
+          });
+        });
+
+        container.querySelectorAll('.pf-down-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.downIdx);
+            if (idx < state.portfolio.length - 1) {
+              const tmp = state.portfolio[idx + 1];
+              state.portfolio[idx + 1] = state.portfolio[idx];
+              state.portfolio[idx] = tmp;
+              saveStorage(true);
+              renderPortfolio();
+            }
+          });
         });
 
         container.querySelectorAll('.pf-del-btn').forEach(btn => {
@@ -1135,6 +1274,84 @@ function doPost(e) {
             saveStorage(true);
             renderPortfolio();
           });
+        });
+
+        // Native HTML5 Drag & Drop on entire card (desktop) + Touch fallback on handle (mobile)
+        let dragFromIdx = null;
+        container.querySelectorAll('.pf-card').forEach(cardEl => {
+          cardEl.addEventListener('dragstart', (e) => {
+            dragFromIdx = Number(cardEl.dataset.pfIdx);
+            cardEl.classList.add('opacity-50', 'ring-2', 'ring-blue-500');
+            if (e.dataTransfer) {
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', String(dragFromIdx));
+            }
+          });
+          cardEl.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+            container.querySelectorAll('.pf-card').forEach(c => c.classList.remove('border-blue-600', 'bg-blue-50/40'));
+            const toIdx = Number(cardEl.dataset.pfIdx);
+            if (dragFromIdx !== null && toIdx !== dragFromIdx) {
+              cardEl.classList.add('border-blue-600', 'bg-blue-50/40');
+            }
+          });
+          cardEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const toIdx = Number(cardEl.dataset.pfIdx);
+            if (dragFromIdx !== null && toIdx !== dragFromIdx) {
+              const [moved] = state.portfolio.splice(dragFromIdx, 1);
+              state.portfolio.splice(toIdx, 0, moved);
+              saveStorage(true);
+            }
+            dragFromIdx = null;
+            renderPortfolio();
+          });
+          cardEl.addEventListener('dragend', () => {
+            dragFromIdx = null;
+            container.querySelectorAll('.pf-card').forEach(c => c.classList.remove('opacity-50', 'ring-2', 'ring-blue-500', 'border-blue-600', 'bg-blue-50/40'));
+          });
+        });
+
+        // Mobile touch drag on handle
+        container.querySelectorAll('.pf-drag-handle').forEach(handle => {
+          handle.addEventListener('touchstart', (e) => {
+            const dragCard = handle.closest('.pf-card');
+            if (!dragCard || !e.touches[0]) return;
+            const fromIdx = Number(dragCard.dataset.pfIdx);
+            let targetIdx = fromIdx;
+            dragCard.classList.add('ring-2', 'ring-blue-500', 'bg-blue-50/40');
+
+            const onTouchMove = (ev) => {
+              if (!ev.touches[0]) return;
+              ev.preventDefault();
+              const y = ev.touches[0].clientY;
+              const cards = Array.from(container.querySelectorAll('.pf-card'));
+              cards.forEach(c => c.classList.remove('border-blue-600'));
+              for (const c of cards) {
+                const r = c.getBoundingClientRect();
+                if (y >= r.top && y <= r.bottom) {
+                  targetIdx = Number(c.dataset.pfIdx);
+                  if (targetIdx !== fromIdx) c.classList.add('border-blue-600');
+                  break;
+                }
+              }
+            };
+
+            const onTouchEnd = () => {
+              document.removeEventListener('touchmove', onTouchMove);
+              document.removeEventListener('touchend', onTouchEnd);
+              if (targetIdx !== fromIdx) {
+                const [moved] = state.portfolio.splice(fromIdx, 1);
+                state.portfolio.splice(targetIdx, 0, moved);
+                saveStorage(true);
+              }
+              renderPortfolio();
+            };
+
+            document.addEventListener('touchmove', onTouchMove, { passive: false });
+            document.addEventListener('touchend', onTouchEnd);
+          }, { passive: true });
         });
       }
 
@@ -1542,17 +1759,20 @@ function doPost(e) {
       }
     }
 
-    async function runFullEodSync(showNotification = false) {
+    async function runFullEodSync(showNotification = false, includeAllHot = false) {
       const statusLine = document.getElementById('sync-status-line');
-      statusLine.textContent = '正在自動更新大盤、匯率與 1 年期日線...';
+      statusLine.textContent = includeAllHot
+        ? '正在掃描 28 檔熱門股 1 年期日線並計算評分...'
+        : '正在自動更新大盤、匯率與持股/自選最新日線...';
 
       await fetchTaiwanStockInfo();
       await fetchMarketAndFutures();
 
+      const baseHot = includeAllHot ? HOT_POOL_CODES : ['0050', '0056', '00878', '2330', '2317', '2454', '2308', '2881', '2603'];
       const targetCodes = Array.from(new Set([
         ...state.portfolio.map(p => p.code),
         ...state.watchlist,
-        '0050', '0056', '00878', '2330', '2317', '2454', '2308', '2881', '2603'
+        ...baseHot
       ]));
 
       let okCount = 0;
@@ -1563,9 +1783,10 @@ function doPost(e) {
         } catch (e) {}
       }
 
-      statusLine.textContent = `已同步 ${okCount} 檔最新日線（大盤基準日：${marketState.latestMarketDate}）`;
+      saveMarketCache();
+      statusLine.textContent = `已同步 ${okCount} 檔最新日線並快取於本機（基準日：${marketState.latestMarketDate}）`;
       switchTab(state.activeTab);
-      if (showNotification) showToast(`盤後更新完成，共更新 ${okCount} 檔最新日線`);
+      if (showNotification) showToast(`更新完成！共載入 ${okCount} 檔最新日線（今日重開免重複抓）`);
     }
 
     async function init() {
@@ -1642,7 +1863,8 @@ function doPost(e) {
         }
       });
 
-      document.getElementById('refresh-all-eod-btn').addEventListener('click', () => runFullEodSync(true));
+      document.getElementById('refresh-all-eod-btn').addEventListener('click', () => runFullEodSync(true, false));
+      document.getElementById('scan-hot-pool-btn').addEventListener('click', () => runFullEodSync(true, true));
 
       document.getElementById('pf-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1679,6 +1901,28 @@ function doPost(e) {
         renderPortfolio();
         showToast(fail === 0 ? `已更新 ${ok} 檔持股收盤價` : `更新 ${ok} 檔成功，${fail} 檔失敗`);
       });
+
+      const bindNameHint = (inputId, hintId) => {
+        const inputEl = document.getElementById(inputId);
+        const hintEl = document.getElementById(hintId);
+        inputEl.addEventListener('input', () => {
+          const code = inputEl.value.trim().toUpperCase();
+          if (!code) {
+            hintEl.classList.add('hidden');
+            return;
+          }
+          const meta = STOCK_META[code] || STOCK_DB[code];
+          if (meta && meta.name && meta.name !== code) {
+            hintEl.textContent = `✓ ${code} ${meta.name}（${meta.sector || '台股'}）`;
+            hintEl.classList.remove('hidden');
+          } else {
+            hintEl.classList.add('hidden');
+          }
+        });
+      };
+      bindNameHint('pf-code', 'pf-code-hint');
+      bindNameHint('search-ticker-input', 'search-code-hint');
+      bindNameHint('wl-add-input', 'wl-code-hint');
 
       document.getElementById('search-ticker-btn').addEventListener('click', () => {
         handleSearch(document.getElementById('search-ticker-input').value);
@@ -1751,11 +1995,19 @@ function doPost(e) {
       document.getElementById('desktop-watch-count').textContent = state.watchlist.length;
       switchTab('strategy');
 
-      // Auto pull from Google Sheets (if configured) then auto fetch EOD data
+      // Auto pull from Google Sheets (if configured)
       if (state.gsUrl) {
         await pullFromGoogleSheets(true);
       }
-      runFullEodSync(false);
+      // Use today's local cache if available to save FinMind quota
+      if (loadMarketCacheIfToday()) {
+        document.getElementById('sync-status-line').textContent = `已載入今日快取（省流量模式 · 基準日：${marketState.latestMarketDate}）`;
+        document.getElementById('ticker-taiex-price').textContent = marketState.taiexClose.toLocaleString('zh-TW');
+        document.getElementById('ticker-fx-rate').textContent = marketState.usdTwd.toFixed(3);
+        switchTab(state.activeTab);
+      } else {
+        runFullEodSync(false, false);
+      }
     }
 
     window.addEventListener('DOMContentLoaded', init);
