@@ -1998,7 +1998,8 @@ function doPost(e) {
         gsStatus.textContent = '正在從 Google Sheets 讀取資料...';
       }
       try {
-        const res = await fetch(state.gsUrl);
+        const sep = state.gsUrl.includes('?') ? '&' : '?';
+        const res = await fetch(`${state.gsUrl}${sep}t=${Date.now()}`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const remoteTs = Number(data.updatedAt || 0);
@@ -2174,6 +2175,9 @@ function doPost(e) {
       });
 
       document.getElementById('pf-refresh-all-btn').addEventListener('click', async () => {
+        if (state.gsUrl) {
+          await pullFromGoogleSheets(true);
+        }
         if (state.portfolio.length === 0) {
           showToast('目前沒有持股可更新');
           return;
@@ -2408,18 +2412,21 @@ function doPost(e) {
       }
     });
 
-    // Auto-pull from Google Sheets when returning to this tab (throttled 10s)
+    // Auto-pull from Google Sheets when returning to this tab / mobile wake (throttled 3s)
     let __lastVisPull = 0;
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible' && state.gsUrl) {
-        const now = Date.now();
-        if (now - __lastVisPull > 10000) {
-          __lastVisPull = now;
-          const ok = await pullFromGoogleSheets(true);
-          if (ok) switchTab(state.activeTab);
-        }
+    const syncOnReturn = async () => {
+      if (!state.gsUrl) return;
+      const now = Date.now();
+      if (now - __lastVisPull > 3000) {
+        __lastVisPull = now;
+        const ok = await pullFromGoogleSheets(true);
+        if (ok) switchTab(state.activeTab);
       }
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') syncOnReturn();
     });
+    window.addEventListener('pageshow', syncOnReturn);
 
     window.addEventListener('DOMContentLoaded', init);
   </script>
