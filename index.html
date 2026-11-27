@@ -534,6 +534,9 @@
       '00919': { name: '群益台灣精選高息', cat: 'ETF', sector: 'ETF' },
       '00713': { name: '元大台灣高息低波', cat: 'ETF', sector: 'ETF' },
       '006208': { name: '富邦台50', cat: 'ETF', sector: 'ETF' },
+      '00632R': { name: '元大台灣50反1', cat: 'ETF', sector: 'ETF' },
+      '00631L': { name: '元大台灣50正2', cat: 'ETF', sector: 'ETF' },
+      '00685L': { name: '群益臺灣加權正2', cat: 'ETF', sector: 'ETF' },
       '2330': { name: '台積電', cat: 'TECH', sector: '科技電子' },
       '2317': { name: '鴻海', cat: 'TECH', sector: '科技電子' },
       '2454': { name: '聯發科', cat: 'TECH', sector: '科技電子' },
@@ -762,7 +765,8 @@ function doPost(e) {
         localStorage.setItem('tw_v4_market_cache', JSON.stringify({
           cacheDate: getTodayStr(),
           marketState,
-          stocks: trimmedDb
+          stocks: trimmedDb,
+          meta: STOCK_META
         }));
       } catch (e) {}
     }
@@ -774,6 +778,7 @@ function doPost(e) {
         const parsed = JSON.parse(raw);
         if (parsed.cacheDate !== getTodayStr() || !parsed.stocks) return false;
         Object.assign(marketState, parsed.marketState || {});
+        if (parsed.meta) Object.assign(STOCK_META, parsed.meta);
         Object.keys(parsed.stocks).forEach(code => {
           STOCK_DB[code] = parsed.stocks[code];
         });
@@ -2197,6 +2202,9 @@ function doPost(e) {
         document.getElementById('ticker-taiex-price').textContent = marketState.taiexClose.toLocaleString('zh-TW');
         document.getElementById('ticker-fx-rate').textContent = marketState.usdTwd.toFixed(3);
         switchTab(state.activeTab);
+        if (Object.keys(STOCK_META).length < 100) {
+          fetchTaiwanStockInfo().then(() => saveMarketCache());
+        }
       } else {
         runFullEodSync(false, false);
       }
