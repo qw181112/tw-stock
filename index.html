@@ -202,8 +202,8 @@
               <button id="open-top100-btn" type="button" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold whitespace-nowrap">
                 📋 查看完整 Top 100
               </button>
-              <button id="scan-hot-pool-btn" type="button" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold whitespace-nowrap">
-                🔍 掃描 28 檔熱門股
+              <button id="scan-hot-pool-btn" type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium whitespace-nowrap" title="僅於 Top 100 未載入時備用">
+                備用：掃描 28 檔
               </button>
             </div>
           </div>
@@ -952,9 +952,12 @@ function doPost(e) {
       const maSummary = `月線 ${maShort || '--'} / 季線 ${maMid || '--'} / 年線 ${maLong || '--'}`;
       const reasonText = reasons.slice(0, 3).join(' · ');
 
+      const high52w = Math.max(...prices);
+      const drawdownPct = high52w > 0 ? Number((((curr - high52w) / high52w) * 100).toFixed(1)) : 0;
+
       const advice = etfMode
-        ? `【ETF 長期持有客觀分析】目前位階屬於「${trendLabel}」（${maSummary}）。${reasons.join('、')}。若採長期定期定額或逢低加碼，可參考 ${safeBuyLow}–${safeBuyHigh} 元區間分批配置。`
-        : `目前位階屬於「${trendLabel}」（${maSummary}）。依據：${reasons.join('、')}。若回測 ${safeBuyLow}–${safeBuyHigh} 元支撐不破可留意，波段停利目標看 ${targetSell} 元，跌破 ${stopLoss} 元建議防守減碼。`;
+        ? `【ETF 長期持有客觀分析】目前位階屬於「${trendLabel}」（${maSummary}），距區間高點 (${high52w}) 回檔 ${drawdownPct}%。${reasons.join('、')}。若採長期定期定額或逢低加碼，可參考 ${safeBuyLow}–${safeBuyHigh} 元區間分批配置。`
+        : `目前位階屬於「${trendLabel}」（${maSummary}），距區間高點 (${high52w}) 回檔 ${drawdownPct}%。依據：${reasons.join('、')}。若回測 ${safeBuyLow}–${safeBuyHigh} 元支撐不破可留意，波段停利目標看 ${targetSell} 元，跌破 ${stopLoss} 元建議防守減碼。`;
 
       // 0-100 Buy Suitability Score
       let score = 20;
@@ -971,7 +974,7 @@ function doPost(e) {
         etfMode, maShort, maMid, maLong, maShortArr, maMidArr, maLongArr,
         latestRsi, latestK, latestD,
         safeBuyLow, safeBuyHigh, targetSell, stopLoss,
-        trendLabel, maSummary, reasonText, advice, score
+        trendLabel, maSummary, reasonText, advice, score, high52w, drawdownPct
       };
     }
 
@@ -1849,6 +1852,10 @@ function doPost(e) {
             <span class="text-lg font-bold text-slate-900 tabular-nums">${price !== null ? price.toLocaleString('zh-TW') + ' 元' : '--'}</span>
             <span class="text-xs font-semibold tabular-nums ${chg.cls}">${chg.text}</span>
           </div>
+          <div class="mt-1 flex items-center justify-between text-[11px] text-slate-400">
+            <span>${s && s.latestVolLots ? '量 ' + s.latestVolLots.toLocaleString('zh-TW') + ' 張' : ''}</span>
+            <span>${s && s.lastDate ? s.lastDate : ''}</span>
+          </div>
         `;
         card.addEventListener('click', (e) => {
           if (e.target.classList.contains('wl-rm-btn')) return;
@@ -1896,8 +1903,8 @@ function doPost(e) {
           <p class="text-sm font-bold text-slate-900 mt-0.5">${a.maLong || '--'} / ${a.maMid || '--'}</p>
         </div>
         <div class="rounded-xl bg-slate-50 border border-slate-200 p-3">
-          <p class="text-[11px] text-slate-500">RSI / KD</p>
-          <p class="text-sm font-bold text-slate-900 mt-0.5">${a.latestRsi || '--'} / ${a.latestK || '--'}</p>
+          <p class="text-[11px] text-slate-500">距高點回檔 / 成交量</p>
+          <p class="text-sm font-bold text-slate-900 mt-0.5">${a.drawdownPct}% · ${active.latestVolLots ? active.latestVolLots.toLocaleString('zh-TW') + '張' : '--'}</p>
         </div>
       `;
 
