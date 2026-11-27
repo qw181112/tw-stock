@@ -63,6 +63,30 @@
     </div>
   </div>
 
+  <!-- Top 100 Full Modal -->
+  <div id="top100-modal" class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-white rounded-2xl max-w-4xl w-full p-4 sm:p-5 shadow-2xl space-y-3 max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">全市場成交熱度 Top 100 評分榜單</h3>
+          <p id="top100-modal-meta" class="text-xs text-slate-500">每日盤後由 GitHub Actions 自動更新</p>
+        </div>
+        <button id="close-top100-btn" type="button" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">✕</button>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <input id="top100-search-input" type="text" placeholder="搜尋代號或名稱..." class="flex-1 min-w-[160px] rounded-xl border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <select id="top100-cat-select" class="rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs bg-white">
+          <option value="ALL">全部分類</option>
+          <option value="ETF">ETF</option>
+          <option value="TECH">科技電子</option>
+          <option value="FIN">金融股</option>
+          <option value="TRAD">傳產其他</option>
+        </select>
+      </div>
+      <div id="top100-modal-list" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+    </div>
+  </div>
+
   <!-- Top Header + Live Ticker -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
     <div class="bg-slate-900 text-white px-3 sm:px-4 py-2">
@@ -174,9 +198,14 @@
                 <a href="https://www.wantgoo.com/stock/ranking/volume" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">玩股網排行</a>
               </p>
             </div>
-            <button id="scan-hot-pool-btn" type="button" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold whitespace-nowrap">
-              🔍 掃描 28 檔熱門股評分
-            </button>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button id="open-top100-btn" type="button" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold whitespace-nowrap">
+                📋 查看完整 Top 100
+              </button>
+              <button id="scan-hot-pool-btn" type="button" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold whitespace-nowrap">
+                🔍 掃描 28 檔熱門股
+              </button>
+            </div>
           </div>
 
           <!-- 分類篩選標籤 -->
@@ -356,7 +385,7 @@
           <div class="rounded-xl bg-red-50/60 border border-red-100 p-3">
             <p class="text-[11px] font-semibold text-red-700">市加權 (TAIEX)</p>
             <p id="taiex-card-close" class="text-base sm:text-lg font-bold text-slate-900 tabular-nums mt-0.5">39,308.08</p>
-            <p id="taiex-card-chg" class="text-[11px] font-semibold text-red-600">+156.27 (+0.40%)</p>
+            <p id="taiex-card-chg" class="text-[11px] font-semibold text-red-600">+156.27 · 量 6,660.7 億</p>
           </div>
           <div class="rounded-xl bg-blue-50/60 border border-blue-100 p-3">
             <p class="text-[11px] font-semibold text-blue-700">台指近 (日盤)</p>
@@ -381,16 +410,22 @@
       </div>
 
       <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 class="text-sm sm:text-base font-bold text-slate-900">
               個股指標分析：<span id="ind-stock-title" class="text-blue-600">2330 台積電</span>
+              <span id="ind-stock-vol" class="ml-1.5 text-xs font-medium text-slate-500"></span>
             </h3>
-            <p class="text-xs text-slate-500">自動載入 1 年期日線繪製 20MA / 60MA / 240MA 年線</p>
+            <p class="text-xs text-slate-500">可直接在下方切換持股／自選標的，或輸入任意代號查看均線與買賣超</p>
           </div>
-          <button id="ind-fetch-chips-btn" type="button" class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold">
-            抓取三大法人買賣超
-          </button>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <select id="ind-stock-select" class="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800"></select>
+            <input id="ind-ticker-input" type="text" placeholder="輸入代號" class="w-24 rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button id="ind-switch-btn" type="button" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold">切換</button>
+            <button id="ind-fetch-chips-btn" type="button" class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold">
+              抓取三大法人買賣超
+            </button>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -622,6 +657,7 @@
       feeDiscount: 1.0,
       portfolio: [],
       chipsByCode: {},
+      top100: null,
       updatedAt: 0,
       gsUrl: ''
     };
@@ -982,6 +1018,7 @@ function doPost(e) {
       const lows = rows.map(r => Number(r.min || r.close));
       const latest = prices[prices.length - 1];
       const lastDate = rows[rows.length - 1].date;
+      const latestVolLots = Math.round(Number(rows[rows.length - 1].Trading_Volume || 0) / 1000);
       const meta = STOCK_META[ticker] || mapIndustryCategory('', ticker);
       const existing = STOCK_DB[ticker] || {};
 
@@ -993,6 +1030,7 @@ function doPost(e) {
         price: latest,
         isDaily: true,
         lastDate,
+        latestVolLots,
         labels,
         prices,
         highs,
@@ -1025,7 +1063,8 @@ function doPost(e) {
             document.getElementById('ticker-taiex-chg').textContent = `${sign}${spread.toFixed(2)}`;
             document.getElementById('ticker-taiex-chg').className = `font-semibold tabular-nums ${spread >= 0 ? 'text-red-400' : 'text-emerald-400'}`;
             document.getElementById('taiex-card-close').textContent = close.toLocaleString('zh-TW');
-            document.getElementById('taiex-card-chg').textContent = `${sign}${spread.toFixed(2)} (${last.date})`;
+            const moneyBillion = last.Trading_money ? ` · 量 ${(Number(last.Trading_money) / 1e8).toFixed(1)} 億` : '';
+            document.getElementById('taiex-card-chg').textContent = `${sign}${spread.toFixed(2)}${moneyBillion} (${last.date})`;
             document.getElementById('taiex-card-chg').className = `text-[11px] font-semibold ${spread >= 0 ? 'text-red-600' : 'text-emerald-600'}`;
             updatedItems.push('市加權');
           }
@@ -1127,20 +1166,49 @@ function doPost(e) {
 
       const buyList = document.getElementById('strategy-buy-list');
       buyList.innerHTML = '';
-      const allCodes = Array.from(new Set([...Object.keys(STOCK_DB), ...state.watchlist]));
-      const filtered = allCodes.map(c => STOCK_DB[c]).filter(s => {
-        if (!s) return false;
-        if (state.strategyCat === 'ALL') return true;
-        return s.cat === state.strategyCat;
-      });
 
-      if (filtered.length === 0) {
-        buyList.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">此分類目前無載入標的，請點擊右上角「🔍 掃描 28 檔熱門股評分」。</p>';
+      if (state.top100 && Array.isArray(state.top100.items) && state.top100.items.length > 0) {
+        const filteredTop = state.top100.items.filter(item => state.strategyCat === 'ALL' || item.cat === state.strategyCat);
+        if (filteredTop.length === 0) {
+          buyList.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">此分類今日 Top 100 無符合標的。</p>';
+        } else {
+          filteredTop.slice(0, 10).forEach(item => {
+            const scoreCls = item.score >= 75 ? 'bg-red-100 text-red-700' : (item.score >= 55 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600');
+            const el = document.createElement('div');
+            el.className = 'rounded-xl border border-slate-200 p-3.5 hover:bg-slate-50 space-y-1.5';
+            el.innerHTML = `
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="font-bold text-sm text-slate-900">${item.code} ${item.name}</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${scoreCls}">適合度 ${item.score} 分</span>
+                  <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">${item.sector}</span>
+                  <span class="text-[10px] text-slate-400">${item.lastDate} · 量 ${Number(item.volumeLots || 0).toLocaleString('zh-TW')}張</span>
+                </div>
+                <span class="text-sm font-bold text-slate-900 tabular-nums">現價 ${Number(item.price).toLocaleString('zh-TW')} 元</span>
+              </div>
+              <div class="text-xs text-emerald-700 font-bold">
+                ${item.etfMode ? '定期定額 / 逢低加碼參考區' : '建議分批買點區間'}：${item.safeBuyLow} ～ ${item.safeBuyHigh} 元
+              </div>
+              <p class="text-[11px] text-slate-600">推薦理由：${item.reasonText}</p>
+            `;
+            buyList.appendChild(el);
+          });
+        }
       } else {
-        const ranked = filtered.map(s => ({ s, a: generateStockAnalysis(s) }))
-          .sort((x, y) => y.a.score - x.a.score);
+        const allCodes = Array.from(new Set([...Object.keys(STOCK_DB), ...state.watchlist]));
+        const filtered = allCodes.map(c => STOCK_DB[c]).filter(s => {
+          if (!s) return false;
+          if (state.strategyCat === 'ALL') return true;
+          return s.cat === state.strategyCat;
+        });
 
-        ranked.slice(0, 10).forEach(({ s, a }) => {
+        if (filtered.length === 0) {
+          buyList.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">此分類目前無載入標的，請點擊右上角「🔍 掃描 28 檔熱門股」。</p>';
+        } else {
+          const ranked = filtered.map(s => ({ s, a: generateStockAnalysis(s) }))
+            .sort((x, y) => y.a.score - x.a.score);
+
+          ranked.slice(0, 10).forEach(({ s, a }) => {
           const staleWarn = !s.isDaily ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">基準資料</span>' : `<span class="text-[10px] text-slate-400">${s.lastDate}</span>`;
           const scoreCls = a.score >= 75 ? 'bg-red-100 text-red-700' : (a.score >= 55 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600');
           const item = document.createElement('div');
@@ -1161,7 +1229,8 @@ function doPost(e) {
             <p class="text-[11px] text-slate-600">推薦理由：${a.reasonText}</p>
           `;
           buyList.appendChild(item);
-        });
+          });
+        }
       }
 
       // 明日持股健檢（區分 ETF 長期持有 vs 個股停利防守）
@@ -1517,6 +1586,19 @@ function doPost(e) {
       const s = STOCK_DB[state.activeCode];
       if (!s) return;
       document.getElementById('ind-stock-title').textContent = `${s.code} ${s.name}`;
+      document.getElementById('ind-stock-vol').textContent = s.latestVolLots ? `（當日量 ${s.latestVolLots.toLocaleString('zh-TW')} 張）` : '';
+
+      const sel = document.getElementById('ind-stock-select');
+      const quickCodes = Array.from(new Set([state.activeCode, ...state.portfolio.map(p => p.code), ...state.watchlist]));
+      sel.innerHTML = '';
+      quickCodes.forEach(c => {
+        const meta = STOCK_META[c] || STOCK_DB[c] || {};
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = `${c} ${meta.name || ''}`;
+        if (c === state.activeCode) opt.selected = true;
+        sel.appendChild(opt);
+      });
 
       if (charts.taiex) charts.taiex.destroy();
       charts.taiex = new Chart(document.getElementById('taiexChart').getContext('2d'), {
@@ -2191,6 +2273,103 @@ function doPost(e) {
       }
       document.getElementById('desktop-watch-count').textContent = state.watchlist.length;
       switchTab('strategy');
+
+      // Bind Top 100 Modal & Tab 4 quick stock switcher
+      const renderTop100Modal = () => {
+        const listEl = document.getElementById('top100-modal-list');
+        const metaEl = document.getElementById('top100-modal-meta');
+        const q = document.getElementById('top100-search-input').value.trim().toUpperCase();
+        const cat = document.getElementById('top100-cat-select').value;
+
+        let items = [];
+        if (state.top100 && Array.isArray(state.top100.items)) {
+          items = state.top100.items;
+          metaEl.textContent = `雲端更新時間：${state.top100.updatedAt} · 共 ${items.length} 檔`;
+        } else {
+          items = Object.values(STOCK_DB).map(st => {
+            const an = generateStockAnalysis(st);
+            return {
+              code: st.code, name: st.name, cat: st.cat, sector: st.sector,
+              etfMode: an.etfMode, price: st.price, volumeLots: st.latestVolLots || 0,
+              lastDate: st.lastDate, safeBuyLow: an.safeBuyLow, safeBuyHigh: an.safeBuyHigh,
+              score: an.score, reasonText: an.reasonText
+            };
+          }).sort((a, b) => b.score - a.score);
+          metaEl.textContent = '尚未偵測到 top100.json，目前顯示本機已載入標的（點「掃描 28 檔」或設定 GitHub Actions 可啟用完整 Top 100）';
+        }
+
+        const filtered = items.filter(it => {
+          if (cat !== 'ALL' && it.cat !== cat) return false;
+          if (q && !it.code.includes(q) && !(it.name || '').toUpperCase().includes(q)) return false;
+          return true;
+        });
+
+        listEl.innerHTML = '';
+        if (filtered.length === 0) {
+          listEl.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">找不到符合條件的標的</p>';
+          return;
+        }
+        filtered.forEach((it, idx) => {
+          const row = document.createElement('div');
+          row.className = 'rounded-xl border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-2 hover:bg-slate-50';
+          row.innerHTML = `
+            <div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-xs font-bold text-slate-400">#${idx + 1}</span>
+                <span class="font-bold text-sm text-slate-900">${it.code} ${it.name}</span>
+                <span class="px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[10px] font-bold">適合度 ${it.score}</span>
+                <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px]">${it.sector}</span>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-0.5">${it.etfMode ? '加碼區' : '買點區'}：${it.safeBuyLow}–${it.safeBuyHigh} 元 · ${it.reasonText}</p>
+            </div>
+            <div class="text-right">
+              <p class="text-sm font-bold text-slate-900 tabular-nums">${Number(it.price).toLocaleString('zh-TW')} 元</p>
+              <p class="text-[11px] text-slate-400">量 ${Number(it.volumeLots || 0).toLocaleString('zh-TW')} 張</p>
+            </div>
+          `;
+          listEl.appendChild(row);
+        });
+      };
+
+      document.getElementById('open-top100-btn').addEventListener('click', () => {
+        renderTop100Modal();
+        document.getElementById('top100-modal').classList.remove('hidden');
+      });
+      document.getElementById('close-top100-btn').addEventListener('click', () => {
+        document.getElementById('top100-modal').classList.add('hidden');
+      });
+      document.getElementById('top100-search-input').addEventListener('input', renderTop100Modal);
+      document.getElementById('top100-cat-select').addEventListener('change', renderTop100Modal);
+
+      document.getElementById('ind-stock-select').addEventListener('change', async (e) => {
+        const c = e.target.value;
+        if (!STOCK_DB[c] || !STOCK_DB[c].isDaily) {
+          try { await fetchFinMindPrice(c, 400); } catch (err) {}
+        }
+        state.activeCode = c;
+        renderIndicators();
+      });
+      document.getElementById('ind-switch-btn').addEventListener('click', async () => {
+        const c = document.getElementById('ind-ticker-input').value.trim().toUpperCase();
+        if (!c) return;
+        showToast(`正在載入 ${c} 日線與指標...`);
+        try {
+          await fetchFinMindPrice(c, 400);
+          state.activeCode = c;
+          renderIndicators();
+        } catch (err) {
+          showToast(`查無 ${c} 資料`);
+        }
+      });
+
+      // Try loading cloud-generated top100.json (0 API quota!)
+      try {
+        const r100 = await fetch('./top100.json?t=' + Date.now());
+        if (r100.ok) {
+          state.top100 = await r100.json();
+          if (state.activeTab === 'strategy') renderStrategy();
+        }
+      } catch (e) {}
 
       // Auto pull from Google Sheets (if configured)
       if (state.gsUrl) {
