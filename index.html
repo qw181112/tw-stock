@@ -137,7 +137,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
-            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.3</span>
+            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.4</span>
           </div>
           <p id="sync-status-line" class="text-[11px] text-slate-500">正在同步最新 1 年期日線與大盤數據...</p>
         </div>
@@ -434,6 +434,19 @@
         </div>
       </div>
 
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-slate-900">全市場三大法人每日買賣超金額（近 15 個交易日）</h3>
+            <p id="market-chips-status" class="text-xs text-slate-500">單位：億元（外資 / 投信 / 自營商柱狀圖 ＋ 三大法人合計折線）</p>
+          </div>
+          <span id="market-chips-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600">載入中...</span>
+        </div>
+        <div class="relative h-60">
+          <canvas id="marketChipsChart"></canvas>
+        </div>
+      </div>
+
       <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -665,7 +678,8 @@
       taiexSpread: 156.27,
       txSpread: 54.92,
       usdTwd: 32.963,
-      latestMarketDate: '2026-11-27'
+      latestMarketDate: '2026-11-27',
+      marketChips: null
     };
 
     const state = {
@@ -691,6 +705,7 @@
       portfolio: null,
       search: null,
       taiex: null,
+      marketChips: null,
       indPrice: null,
       indOsc: null,
       chips: null
@@ -1165,7 +1180,55 @@ function doPost(e) {
         }
       } catch (e) {}
 
+      const chipsOk = await fetchMarketTotalChips();
+      if (chipsOk) updatedItems.push('全市場三大法人');
+
       return updatedItems;
+    }
+
+    async function fetchMarketTotalChips() {
+      try {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 30);
+        const start30Str = start.toISOString().slice(0, 10);
+        const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockTotalInstitutionalInvestors&start_date=${start30Str}`;
+        const res = await fetch(url);
+        if (!res.ok) return false;
+        const json = await res.json();
+        const raw = json.data || [];
+        if (raw.length === 0) return false;
+
+        const byDate = {};
+        raw.forEach(r => {
+          if (!r.date) return;
+          if (!byDate[r.date]) byDate[r.date] = { foreign: 0, trust: 0, dealer: 0 };
+          const netBillion = (Number(r.buy || 0) - Number(r.sell || 0)) / 1e8;
+          if (r.name && r.name.includes('Foreign')) byDate[r.date].foreign += netBillion;
+          else if (r.name && r.name.includes('Investment_Trust')) byDate[r.date].trust += netBillion;
+          else if (r.name && r.name.includes('Dealer')) byDate[r.date].dealer += netBillion;
+        });
+
+        const dates = Object.keys(byDate).sort().slice(-15);
+        if (dates.length === 0) return false;
+
+        const foreign = dates.map(d => Number(byDate[d].foreign.toFixed(2)));
+        const trust = dates.map(d => Number(byDate[d].trust.toFixed(2)));
+        const dealer = dates.map(d => Number(byDate[d].dealer.toFixed(2)));
+        const total = dates.map((_, i) => Number((foreign[i] + trust[i] + dealer[i]).toFixed(2)));
+
+        marketState.marketChips = {
+          dates,
+          labels: dates.map(d => d.slice(5)),
+          foreign,
+          trust,
+          dealer,
+          total
+        };
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
 
     let latestBriefText = '';
@@ -1888,7 +1951,96 @@ function doPost(e) {
         }
       });
 
+      renderMarketChipsChart();
       renderChipsChart();
+    }
+
+    function renderMarketChipsChart() {
+      const mc = marketState.marketChips;
+      const statusEl = document.getElementById('market-chips-status');
+      const badgeEl = document.getElementById('market-chips-badge');
+      const canvas = document.getElementById('marketChipsChart');
+      if (!canvas) return;
+
+      if (charts.marketChips) charts.marketChips.destroy();
+
+      if (!mc || !Array.isArray(mc.labels) || mc.labels.length === 0) {
+        if (statusEl) statusEl.textContent = '尚未載入全市場三大法人買賣超資料，請點上方「更新大盤 / 期貨 / 匯率」';
+        if (badgeEl) {
+          badgeEl.textContent = '待更新';
+          badgeEl.className = 'px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600';
+        }
+        charts.marketChips = new Chart(canvas.getContext('2d'), {
+          type: 'bar',
+          data: { labels: ['尚無資料'], datasets: [{ label: '請點上方按鈕更新', data: [0], backgroundColor: '#e2e8f0' }] },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+        return;
+      }
+
+      const lastIdx = mc.labels.length - 1;
+      const lastDate = mc.dates && mc.dates[lastIdx] ? mc.dates[lastIdx] : mc.labels[lastIdx];
+      const fmt = (v) => `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}`;
+      const lastTotal = mc.total[lastIdx];
+
+      if (statusEl) {
+        statusEl.textContent = `${lastDate}：外資 ${fmt(mc.foreign[lastIdx])} 億 · 投信 ${fmt(mc.trust[lastIdx])} 億 · 自營商 ${fmt(mc.dealer[lastIdx])} 億（單位：億元）`;
+      }
+      if (badgeEl) {
+        badgeEl.textContent = `合計 ${fmt(lastTotal)} 億`;
+        badgeEl.className = `px-2.5 py-1 rounded-full text-xs font-bold ${
+          lastTotal > 0 ? 'bg-red-100 text-red-700' : (lastTotal < 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700')
+        }`;
+      }
+
+      charts.marketChips = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: mc.labels,
+          datasets: [
+            {
+              type: 'line',
+              label: '三大法人合計(億)',
+              data: mc.total,
+              borderColor: '#0f172a',
+              backgroundColor: '#0f172a',
+              borderWidth: 2.2,
+              pointRadius: 2.5,
+              pointHoverRadius: 4,
+              tension: 0.15,
+              order: 0
+            },
+            { type: 'bar', label: '外資(億)', data: mc.foreign, backgroundColor: '#dc2626', order: 1 },
+            { type: 'bar', label: '投信(億)', data: mc.trust, backgroundColor: '#2563eb', order: 1 },
+            { type: 'bar', label: '自營商(億)', data: mc.dealer, backgroundColor: '#f59e0b', order: 1 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+              callbacks: {
+                label: (ctx) => {
+                  const v = Number(ctx.parsed.y || 0);
+                  const sign = v > 0 ? '+' : '';
+                  return `${ctx.dataset.label}: ${sign}${v.toFixed(2)} 億元`;
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              ticks: {
+                callback: (val) => `${val} 億`
+              }
+            }
+          }
+        }
+      });
     }
 
     function renderChipsChart() {
@@ -2483,6 +2635,10 @@ function doPost(e) {
 
       document.getElementById('ind-fetch-tx-btn').addEventListener('click', async () => {
         const items = await fetchMarketAndFutures();
+        if (items.length > 0) {
+          saveMarketCache();
+          renderIndicators();
+        }
         showToast(items.length > 0 ? `已更新：${items.join('、')}` : '連線失敗，顯示基準數據');
       });
       document.getElementById('ind-fetch-chips-btn').addEventListener('click', fetchInstitutionalChips);
@@ -2657,6 +2813,14 @@ function doPost(e) {
         document.getElementById('ticker-taiex-price').textContent = marketState.taiexClose.toLocaleString('zh-TW');
         document.getElementById('ticker-fx-rate').textContent = marketState.usdTwd.toFixed(3);
         switchTab(state.activeTab);
+        if (!marketState.marketChips || !Array.isArray(marketState.marketChips.dates) || marketState.marketChips.dates.length === 0) {
+          fetchMarketTotalChips().then(ok => {
+            if (ok) {
+              saveMarketCache();
+              if (state.activeTab === 'indicators') renderMarketChipsChart();
+            }
+          });
+        }
         if (Object.keys(STOCK_META).length < 100) {
           fetchTaiwanStockInfo().then(() => saveMarketCache());
         }
