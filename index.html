@@ -137,7 +137,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
-            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.5</span>
+            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.6</span>
           </div>
           <p id="sync-status-line" class="text-[11px] text-slate-500">正在同步最新 1 年期日線與大盤數據...</p>
         </div>
@@ -548,6 +548,18 @@
           <p class="text-xs font-bold text-blue-900">客觀分析與明日觀察重點</p>
           <p id="wl-detail-advice" class="text-xs sm:text-sm text-slate-700 leading-relaxed">--</p>
         </div>
+
+        <div id="wl-odd-lot-box" class="rounded-2xl bg-emerald-50/70 border border-emerald-200 p-4 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-bold text-emerald-900">🧮 零股 / 分批買進試算</span>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[11px] text-slate-600">預計投入</span>
+              <input type="number" min="100" step="1000" value="30000" class="odd-budget-input w-24 rounded-lg border border-emerald-300 bg-white px-2 py-1 text-xs font-semibold text-right focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              <span class="text-[11px] text-slate-600">元</span>
+            </div>
+          </div>
+          <p class="odd-budget-out text-xs text-slate-700 leading-relaxed"></p>
+        </div>
       </div>
     </section>
 
@@ -698,6 +710,8 @@
       portfolio: [],
       chipsByCode: {},
       top100: null,
+      editingPfIdx: null,
+      oddLotBudget: 30000,
       updatedAt: 0,
       gsUrl: ''
     };
@@ -1766,6 +1780,9 @@ function doPost(e) {
                 <p class="text-xs font-semibold tabular-nums ${pnlCls}">${sign}${roi.toFixed(2)}%</p>
               </div>
               <div class="flex items-center gap-1">
+                <button type="button" data-edit-idx="${idx}" class="pf-edit-btn px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-xs font-semibold text-blue-700">
+                  編輯
+                </button>
                 <button type="button" data-up-idx="${idx}" ${idx === 0 ? 'disabled' : ''} class="pf-up-btn px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-xs text-slate-700" title="上移">▲</button>
                 <button type="button" data-down-idx="${idx}" ${idx === state.portfolio.length - 1 ? 'disabled' : ''} class="pf-down-btn px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-xs text-slate-700" title="下移">▼</button>
                 <button type="button" data-del-idx="${idx}" class="pf-del-btn px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-red-50 hover:text-red-600 text-xs text-slate-600">
@@ -1774,6 +1791,28 @@ function doPost(e) {
               </div>
             </div>
           `;
+          if (state.editingPfIdx === idx) {
+            card.draggable = false;
+            card.className = 'pf-card rounded-xl border-2 border-blue-500 bg-blue-50/30 p-3.5 space-y-2.5';
+            card.innerHTML = `
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-sm text-slate-900">編輯 ${h.code} ${stock ? stock.name : (meta.name || '')}</span>
+                <span class="text-[11px] text-slate-500">修改後自動重算並同步雲端</span>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+                <div>
+                  <label class="block text-[11px] font-medium text-slate-600 mb-1">持有股數</label>
+                  <input type="number" min="1" step="1" value="${h.shares}" data-edit-shares="${idx}" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label class="block text-[11px] font-medium text-slate-600 mb-1">買入均價 (元)</label>
+                  <input type="number" min="0.01" step="0.01" value="${h.avgCost}" data-edit-cost="${idx}" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <button type="button" data-save-idx="${idx}" class="pf-save-btn px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold">儲存</button>
+                <button type="button" class="pf-cancel-btn px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium">取消</button>
+              </div>
+            `;
+          }
           container.appendChild(card);
         });
 
@@ -1803,8 +1842,43 @@ function doPost(e) {
           });
         });
 
+        container.querySelectorAll('.pf-edit-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.editingPfIdx = Number(btn.dataset.editIdx);
+            renderPortfolio();
+          });
+        });
+
+        container.querySelectorAll('.pf-cancel-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.editingPfIdx = null;
+            renderPortfolio();
+          });
+        });
+
+        container.querySelectorAll('.pf-save-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.saveIdx);
+            const sharesInput = container.querySelector(`[data-edit-shares="${idx}"]`);
+            const costInput = container.querySelector(`[data-edit-cost="${idx}"]`);
+            const newShares = Number(sharesInput && sharesInput.value);
+            const newCost = Number(costInput && costInput.value);
+            if (!newShares || newShares <= 0 || !newCost || newCost <= 0) {
+              showToast('請輸入大於 0 的股數與均價');
+              return;
+            }
+            state.portfolio[idx].shares = Math.round(newShares);
+            state.portfolio[idx].avgCost = Number(newCost.toFixed(2));
+            state.editingPfIdx = null;
+            saveStorage(true);
+            renderPortfolio();
+            showToast(`已更新 ${state.portfolio[idx].code} 持股`);
+          });
+        });
+
         container.querySelectorAll('.pf-del-btn').forEach(btn => {
           btn.addEventListener('click', () => {
+            state.editingPfIdx = null;
             state.portfolio.splice(Number(btn.dataset.delIdx), 1);
             saveStorage(true);
             renderPortfolio();
@@ -1920,6 +1994,39 @@ function doPost(e) {
       }
     }
 
+    function calcOddLotResultText(budget, lowPrice, highPrice) {
+      const b = Number(budget || 0);
+      if (b <= 0 || !lowPrice || !highPrice) return '請輸入預計投入金額（元）';
+      const minShares = Math.floor(b / highPrice);
+      const maxShares = Math.floor(b / lowPrice);
+      if (maxShares <= 0) {
+        return `預算不足 1 股（建議區間下緣 1 股需約 <b>${Math.ceil(lowPrice).toLocaleString('zh-TW')} 元</b>）`;
+      }
+      const midPrice = (lowPrice + highPrice) / 2;
+      const midShares = Math.floor(b / midPrice);
+      const b2 = Math.floor(midShares / 2);
+      const b3 = Math.floor(midShares / 3);
+      const estFee = Math.max(1, Math.floor(b * 0.001425 * state.feeDiscount));
+      const rangeText = minShares === maxShares
+        ? `<b>${midShares.toLocaleString('zh-TW')} 股</b>`
+        : `<b>${minShares.toLocaleString('zh-TW')}～${maxShares.toLocaleString('zh-TW')} 股</b>（中位價約 ${midShares.toLocaleString('zh-TW')} 股）`;
+      return `買點區間可買約 ${rangeText}｜分 2 批每批約 <b>${b2} 股</b> · 分 3 批每批約 <b>${b3} 股</b>｜預估買入手續費約 ${estFee} 元`;
+    }
+
+    function bindOddLotBox(containerId, lowPrice, highPrice) {
+      const box = document.getElementById(containerId);
+      if (!box) return;
+      const inputEl = box.querySelector('.odd-budget-input');
+      const outEl = box.querySelector('.odd-budget-out');
+      const update = () => {
+        const val = Number(inputEl.value || 0);
+        if (val > 0) state.oddLotBudget = val;
+        outEl.innerHTML = calcOddLotResultText(val, lowPrice, highPrice);
+      };
+      inputEl.addEventListener('input', update);
+      update();
+    }
+
     // ==================== RENDER SEARCH ====================
     function renderSearch() {
       const s = STOCK_DB[state.activeCode];
@@ -1927,9 +2034,13 @@ function doPost(e) {
       document.getElementById('sr-code').textContent = s.code;
       document.getElementById('sr-name').textContent = s.name;
       document.getElementById('sr-sector').textContent = s.sector;
-      document.getElementById('sr-meta').textContent = `資料日期：${s.lastDate || '基準'} · ${s.isDaily ? '1 年期日線' : '月線基準'}`;
+      document.getElementById('sr-meta').textContent = s.isTop100Fallback
+        ? `Top 100 備援資料（資料日：${s.lastDate} · 暫無歷史走勢圖）`
+        : `資料日期：${s.lastDate || '基準'} · ${s.isDaily ? '1 年期日線' : '月線基準'}`;
       document.getElementById('sr-price').textContent = `${s.price.toLocaleString('zh-TW')} 元`;
-      const chg = getChangeInfo(s.prices);
+      const chg = s.isTop100Fallback && s.fallbackChgText
+        ? { text: s.fallbackChgText, cls: s.fallbackChgCls || 'text-slate-600' }
+        : getChangeInfo(s.prices);
       const chgEl = document.getElementById('sr-chg');
       chgEl.textContent = chg.text;
       chgEl.className = `text-xs font-semibold tabular-nums ${chg.cls}`;
@@ -1937,23 +2048,43 @@ function doPost(e) {
       const inWatch = state.watchlist.includes(s.code);
       document.getElementById('sr-add-watch-btn').textContent = inWatch ? '★ 已在自選清單' : '☆ 加入自選清單';
 
-      const a = generateStockAnalysis(s);
+      const a = s.isTop100Fallback && s.fallbackAnalysis ? s.fallbackAnalysis : generateStockAnalysis(s);
       document.getElementById('sr-analysis-grid').innerHTML = `
         <div class="rounded-xl bg-slate-50 border border-slate-200 p-3">
-          <p class="text-xs font-bold text-slate-800">均線位階（含年線 240MA）</p>
-          <p class="text-xs text-slate-600 mt-1">${a.maSummary}</p>
+          <p class="text-xs font-bold text-slate-800">${s.isTop100Fallback ? '綜合評分與位階' : '均線位階（含年線 240MA）'}</p>
+          <p class="text-xs text-slate-600 mt-1">${s.isTop100Fallback ? `適合度 ${a.score} 分 · ${a.reasonText}` : a.maSummary}</p>
         </div>
         <div class="rounded-xl bg-slate-50 border border-slate-200 p-3">
           <p class="text-xs font-bold text-slate-800">${a.etfMode ? '逢低分批加碼參考區' : '明日買賣價位參考'}</p>
-          <p class="text-xs text-slate-600 mt-1">${a.etfMode ? `${a.safeBuyLow}–${a.safeBuyHigh} 元（長期持有免停利）` : `買點區：${a.safeBuyLow}–${a.safeBuyHigh} 元 · 停利目標：${a.targetSell} 元`}</p>
+          <p class="text-xs text-slate-600 mt-1">${a.etfMode ? `${a.safeBuyLow}–${a.safeBuyHigh} 元（長期持有免停利）` : `買點區：${a.safeBuyLow}–${a.safeBuyHigh} 元 · 停利目標：${a.targetSell} 元 · 防守：${a.stopLoss} 元`}</p>
         </div>
         <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 md:col-span-2">
           <p class="text-xs font-bold text-blue-900">盤後綜合診斷</p>
           <p class="text-xs text-slate-700 mt-1">${a.advice}</p>
         </div>
+        <div id="sr-odd-lot-box" class="rounded-xl bg-emerald-50/70 border border-emerald-200 p-3 md:col-span-2 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-bold text-emerald-900">🧮 零股 / 分批買進試算（依建議買點 ${a.safeBuyLow}–${a.safeBuyHigh} 元）</span>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[11px] text-slate-600">預計投入</span>
+              <input type="number" min="100" step="1000" value="${state.oddLotBudget}" class="odd-budget-input w-24 rounded-lg border border-emerald-300 bg-white px-2 py-1 text-xs font-semibold text-right focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              <span class="text-[11px] text-slate-600">元</span>
+            </div>
+          </div>
+          <p class="odd-budget-out text-xs text-slate-700 leading-relaxed"></p>
+        </div>
       `;
+      bindOddLotBox('sr-odd-lot-box', a.safeBuyLow, a.safeBuyHigh);
 
       if (charts.search) charts.search.destroy();
+      if (s.isTop100Fallback || !s.prices || s.prices.length < 2) {
+        charts.search = new Chart(document.getElementById('searchChart').getContext('2d'), {
+          type: 'line',
+          data: { labels: [s.lastDate || '今日'], datasets: [{ label: `${s.code} 收盤價`, data: [s.price], borderColor: '#94a3b8', pointRadius: 4 }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        return;
+      }
       const sliceN = Math.min(60, s.prices.length);
       charts.search = new Chart(document.getElementById('searchChart').getContext('2d'), {
         type: 'line',
@@ -2224,7 +2355,7 @@ function doPost(e) {
         showToast(`已載入 ${ticker} 三大法人買賣超`);
       } catch (e) {
         const msg = String(e && e.message ? e.message : '');
-        const friendly = (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed'))
+        const friendly = (msg.includes('403') || msg.includes('429') || msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed'))
           ? 'FinMind 暫時限流（每小時 300 次額度）或網路中斷，請稍候再試'
           : msg;
         statusEl.textContent = `無法取得 FinMind 籌碼資料（${friendly}）`;
@@ -2414,6 +2545,9 @@ function doPost(e) {
       `;
 
       document.getElementById('wl-detail-advice').textContent = a.advice;
+      const wlInput = document.querySelector('#wl-odd-lot-box .odd-budget-input');
+      if (wlInput) wlInput.value = state.oddLotBudget;
+      bindOddLotBox('wl-odd-lot-box', a.safeBuyLow, a.safeBuyHigh);
     }
 
     function switchTab(tabName) {
@@ -2453,10 +2587,48 @@ function doPost(e) {
         await fetchFinMindPrice(code, 400);
         statusEl.textContent = `已載入 ${code} ${STOCK_DB[code].name} 最新日線（資料日：${STOCK_DB[code].lastDate}）。`;
       } catch (e) {
-        if (STOCK_DB[code]) {
-          statusEl.textContent = `無法連線即時 API，顯示 ${code} 基準資料。`;
+        const msg = String(e && e.message ? e.message : '');
+        const isRateLimit = msg.includes('403') || msg.includes('429') || msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed');
+        const topItem = state.top100 && Array.isArray(state.top100.items)
+          ? state.top100.items.find(it => String(it.code).toUpperCase() === code)
+          : null;
+
+        if (topItem) {
+          const chgPct = Number(topItem.chgPct || 0);
+          const sign = chgPct > 0 ? '+' : '';
+          STOCK_DB[code] = {
+            code,
+            name: topItem.name || code,
+            cat: topItem.cat || 'TRAD',
+            sector: topItem.sector || '台股',
+            price: Number(topItem.price || 0),
+            isDaily: false,
+            isTop100Fallback: true,
+            lastDate: topItem.lastDate || (state.top100.generatedAt || '').slice(0, 10),
+            labels: [topItem.lastDate || '備援'],
+            prices: [Number(topItem.price || 0)],
+            fallbackChgText: `${sign}${chgPct.toFixed(2)}%`,
+            fallbackChgCls: chgPct > 0 ? 'text-red-600' : (chgPct < 0 ? 'text-emerald-600' : 'text-slate-600'),
+            fallbackAnalysis: {
+              etfMode: Boolean(topItem.etfMode),
+              score: Number(topItem.score || 0),
+              safeBuyLow: topItem.safeBuyLow,
+              safeBuyHigh: topItem.safeBuyHigh,
+              targetSell: topItem.targetSell,
+              stopLoss: topItem.stopLoss,
+              reasonText: topItem.reasonText || '',
+              advice: topItem.etfMode
+                ? `【Top 100 備援資料】適合度 ${topItem.score} 分，${topItem.reasonText || ''}。可參考逢低加碼區間 ${topItem.safeBuyLow}–${topItem.safeBuyHigh} 元分批配置。`
+                : `【Top 100 備援資料】適合度 ${topItem.score} 分，${topItem.reasonText || ''}。建議買點區 ${topItem.safeBuyLow}–${topItem.safeBuyHigh} 元，停利目標 ${topItem.targetSell} 元，防守價 ${topItem.stopLoss} 元。`
+            }
+          };
+          statusEl.textContent = `${isRateLimit ? 'FinMind 暫時限流，' : '即時 API 連線異常，'}改顯示 Top 100 備援資料（資料日：${STOCK_DB[code].lastDate}，暫無歷史走勢圖）。`;
+        } else if (STOCK_DB[code]) {
+          statusEl.textContent = `${isRateLimit ? 'FinMind 暫時限流，' : '無法連線即時 API，'}顯示 ${code} 基準資料。`;
         } else {
-          statusEl.textContent = `查無 ${code} 資料（${e.message}），請確認代號是否正確。`;
+          statusEl.textContent = isRateLimit
+            ? `FinMind 暫時限流（每小時 300 次額度）或網路中斷，無法查詢 ${code}，請稍候再試。`
+            : `查無 ${code} 資料（${msg}），請確認代號是否正確。`;
           return;
         }
       }
