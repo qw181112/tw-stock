@@ -216,6 +216,160 @@ def analyze_stock(code, fallback_name, meta, start_date):
     }
 
 
+
+def fetch_macro_snapshot(now_tw):
+    start_35 = (now_tw - timedelta(days=35)).strftime("%Y-%m-%d")
+    start_14 = (now_tw - timedelta(days=14)).strftime("%Y-%m-%d")
+    macro = {}
+
+    # 1. TAIEX + Margin Balance (15 trading days)
+    taiex_rows = []
+    try:
+        r = requests.get(
+            f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=TAIEX&start_date={start_35}",
+            timeout=20,
+        )
+        taiex_rows = [
+            x for x in r.json().get("data", []) if float(x.get("close", 0)) > 0 and x.get("date")
+        ]
+        taiex_rows.sort(key=lambda x: x["date"])
+    except Exception:
+        pass
+
+    margin_map = {}
+    try:
+        r = requests.get(
+            f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockTotalMarginPurchaseShortSale&start_date={start_35}",
+            timeout=20,
+        )
+        for row in r.json().get("data", []):
+            if row.get("date") and row.get("name") == "MarginPurchaseMoney" and float(row.get("TodayBalance", 0)) > 0:
+                raw_val = float(row["TodayBalance"])
+                billion_val = raw_val / 1e8 if raw_val > 1e10 else raw_val / 1e5
+                margin_map[row["date"]] = round(billion_val, 2)
+    except Exception:
+        pass
+
+    if taiex_rows:
+        last_t = taiex_rows[-1]
+        macro["taiexClose"] = float(last_t["close"])
+        macro["taiexSpread"] = float(last_t.get("spread", 0) or 0)
+        macro["taiexMoneyBillion"] = round(float(last_t.get("Trading_money", 0) or 0) / 1e8, 1)
+        macro["latestMarketDate"] = last_t["date"]
+
+        recent15 = taiex_rows[-15:]
+        dates = [x["date"] for x in recent15]
+        closes = [float(x["close"]) for x in recent15]
+        last_m = None
+        margins = []
+        for d in dates:
+            if d in margin_map:
+                last_m = margin_map[d]
+            margins.append(last_m)
+        macro["taiexSeries"] = {
+            "dates": dates,
+            "labels": [d[5:] for d in dates],
+            "closes": closes,
+            "marginBillion": margins,
+        }
+
+    # 2. TX Futures (Day & Night)
+    try:
+        r = requests.get(
+            f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanFuturesDaily&data_id=TX&start_date={start_14}",
+            timeout=20,
+        )
+        valid_tx = [
+            x
+            for x in r.json().get("data", [])
+            if float(x.get("close", 0)) > 0 and "/" not in str(x.get("contract_date", ""))
+        ]
+
+        def pick_latest(rows):
+            if not rows:
+                return None
+            max_d = max(x["date"] for x in rows)
+            same_day = [x for x in rows if x["date"] == max_d]
+            same_day.sort(key=lambda x: float(x.get("volume", 0) or 0), reverse=True)
+            return same_day[0]
+
+        day_last = pick_latest([x for x in valid_tx if x.get("trading_session") in ("position", "", None)])
+        if day_last:
+            tx_c = float(day_last["close"])
+            macro["txClose"] = tx_c
+            macro["txDaySpread"] = float(day_last.get("spread", 0) or 0)
+            macro["txDayDate"] = day_last["date"]
+            if "taiexClose" in macro:
+                macro["txSpread"] = round(tx_c - macro["taiexClose"], 2)
+
+        night_last = pick_latest([x for x in valid_tx if x.get("trading_session") == "after_market"])
+        if night_last:
+            macro["txNightClose"] = float(night_last["close"])
+            macro["txNightSpread"] = float(night_last.get("spread", 0) or 0)
+            macro["txNightDate"] = night_last["date"]
+    except Exception:
+        pass
+
+    # 3. USD/TWD Exchange Rate
+    try:
+        r = requests.get(
+            f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanExchangeRate&data_id=USD&start_date={start_14}",
+            timeout=20,
+        )
+        fx_rows = sorted([x for x in r.json().get("data", []) if x.get("date")], key=lambda x: x["date"])
+        if fx_rows:
+            last_fx = fx_rows[-1]
+            sb = float(last_fx.get("spot_buy", 0) or 0)
+            ss = float(last_fx.get("spot_sell", 0) or 0)
+            if sb > 0 and ss > 0:
+                macro["usdTwd"] = round((sb + ss) / 2.0, 3)
+                macro["fxSpotBuy"] = sb
+                macro["fxSpotSell"] = ss
+                macro["fxDate"] = last_fx["date"]
+    except Exception:
+        pass
+
+    # 4. Market-wide Institutional Investors (15 trading days)
+    try:
+        r = requests.get(
+            f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockTotalInstitutionalInvestors&start_date={start_35}",
+            timeout=20,
+        )
+        by_date = {}
+        for row in r.json().get("data", []):
+            d = row.get("date")
+            if not d:
+                continue
+            if d not in by_date:
+                by_date[d] = {"foreign": 0.0, "trust": 0.0, "dealer": 0.0}
+            net_b = (float(row.get("buy", 0) or 0) - float(row.get("sell", 0) or 0)) / 1e8
+            name = row.get("name", "")
+            if "Foreign" in name:
+                by_date[d]["foreign"] += net_b
+            elif "Investment_Trust" in name:
+                by_date[d]["trust"] += net_b
+            elif "Dealer" in name:
+                by_date[d]["dealer"] += net_b
+        dates = sorted(by_date.keys())[-15:]
+        if dates:
+            foreign = [round(by_date[d]["foreign"], 2) for d in dates]
+            trust = [round(by_date[d]["trust"], 2) for d in dates]
+            dealer = [round(by_date[d]["dealer"], 2) for d in dates]
+            total = [round(foreign[i] + trust[i] + dealer[i], 2) for i in range(len(dates))]
+            macro["marketChips"] = {
+                "dates": dates,
+                "labels": [d[5:] for d in dates],
+                "foreign": foreign,
+                "trust": trust,
+                "dealer": dealer,
+                "total": total,
+            }
+    except Exception:
+        pass
+
+    return macro
+
+
 def main():
     now_tw = datetime.now(TW_TZ)
     start_date = (now_tw - timedelta(days=400)).strftime("%Y-%m-%d")
@@ -241,10 +395,12 @@ def main():
         "aboveMa20Count": sum(1 for x in results if x.get("aboveMa20")),
         "avgChgPct": round(sum(x["chgPct"] for x in results) / total, 2) if total else 0.0,
     }
+    macro = fetch_macro_snapshot(now_tw)
     payload = {
         "updatedAt": now_tw.strftime("%Y-%m-%d %H:%M"),
         "count": total,
         "breadth": breadth,
+        "macro": macro,
         "items": results,
     }
     with open("top100.json", "w", encoding="utf-8") as f:

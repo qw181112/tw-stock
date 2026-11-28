@@ -137,7 +137,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
-            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.6</span>
+            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.7</span>
           </div>
           <p id="sync-status-line" class="text-[11px] text-slate-500">正在同步最新 1 年期日線與大盤數據...</p>
         </div>
@@ -1146,6 +1146,56 @@ function doPost(e) {
         };
       }
       return taiexRows;
+    }
+
+    function applyMacroFromTop100(macro) {
+      if (!macro || typeof macro !== 'object') return false;
+      if (typeof macro.taiexClose === 'number') {
+        marketState.taiexClose = macro.taiexClose;
+        marketState.taiexSpread = Number(macro.taiexSpread || 0);
+        if (macro.latestMarketDate) marketState.latestMarketDate = macro.latestMarketDate;
+        const sign = marketState.taiexSpread > 0 ? '+' : '';
+        document.getElementById('ticker-taiex-price').textContent = marketState.taiexClose.toLocaleString('zh-TW');
+        document.getElementById('ticker-taiex-chg').textContent = `${sign}${marketState.taiexSpread.toFixed(2)}`;
+        document.getElementById('ticker-taiex-chg').className = `font-semibold tabular-nums ${marketState.taiexSpread >= 0 ? 'text-red-400' : 'text-emerald-400'}`;
+        document.getElementById('taiex-card-close').textContent = marketState.taiexClose.toLocaleString('zh-TW');
+        const moneyB = macro.taiexMoneyBillion ? ` · 量 ${macro.taiexMoneyBillion} 億` : '';
+        document.getElementById('taiex-card-chg').textContent = `${sign}${marketState.taiexSpread.toFixed(2)}${moneyB} (${marketState.latestMarketDate})`;
+        document.getElementById('taiex-card-chg').className = `text-[11px] font-semibold ${marketState.taiexSpread >= 0 ? 'text-red-600' : 'text-emerald-600'}`;
+      }
+      if (typeof macro.txClose === 'number') {
+        const sp = Number(macro.txDaySpread || 0);
+        const sign = sp > 0 ? '+' : '';
+        marketState.txSpread = typeof macro.txSpread === 'number' ? macro.txSpread : Number((macro.txClose - marketState.taiexClose).toFixed(2));
+        document.getElementById('ticker-tx-price').textContent = macro.txClose.toLocaleString('zh-TW');
+        document.getElementById('ticker-tx-chg').textContent = `${sign}${sp}`;
+        document.getElementById('ticker-tx-chg').className = `font-semibold tabular-nums ${sp >= 0 ? 'text-red-400' : 'text-emerald-400'}`;
+        document.getElementById('tx-card-close').textContent = macro.txClose.toLocaleString('zh-TW');
+        document.getElementById('tx-card-chg').textContent = `${sign}${sp} (${macro.txDayDate || ''})`;
+      }
+      if (typeof macro.txNightClose === 'number') {
+        const spN = Number(macro.txNightSpread || 0);
+        const signN = spN > 0 ? '+' : '';
+        marketState.txNightClose = macro.txNightClose;
+        marketState.txNightSpread = spN;
+        marketState.txNightDate = macro.txNightDate || '';
+        document.getElementById('ticker-tx-night-price').textContent = macro.txNightClose.toLocaleString('zh-TW');
+        document.getElementById('ticker-tx-night-chg').textContent = `${signN}${spN}`;
+        document.getElementById('ticker-tx-night-chg').className = `font-semibold tabular-nums ${spN >= 0 ? 'text-red-400' : 'text-emerald-400'}`;
+        document.getElementById('tx-night-close').textContent = macro.txNightClose.toLocaleString('zh-TW');
+        document.getElementById('tx-night-chg').textContent = `${signN}${spN} (${macro.txNightDate || ''} 夜盤)`;
+      }
+      if (typeof macro.usdTwd === 'number') {
+        marketState.usdTwd = macro.usdTwd;
+        document.getElementById('ticker-fx-rate').textContent = macro.usdTwd.toFixed(3);
+        document.getElementById('fx-card-rate').textContent = macro.usdTwd.toFixed(3);
+        if (macro.fxSpotBuy && macro.fxSpotSell) {
+          document.getElementById('fx-card-note').textContent = `即期 ${macro.fxSpotBuy} / ${macro.fxSpotSell} (${macro.fxDate || ''})`;
+        }
+      }
+      if (macro.taiexSeries) marketState.taiexSeries = macro.taiexSeries;
+      if (macro.marketChips) marketState.marketChips = macro.marketChips;
+      return true;
     }
 
     async function fetchMarketAndFutures() {
@@ -2322,6 +2372,12 @@ function doPost(e) {
     async function fetchInstitutionalChips() {
       const ticker = state.activeCode;
       const statusEl = document.getElementById('chips-status-text');
+      const existingChip = state.chipsByCode[ticker];
+      if (existingChip && existingChip.fetchedDate === getTodayStr()) {
+        renderChipsChart();
+        showToast(`已使用今日快取的 ${ticker} 三大法人資料（省額度）`);
+        return;
+      }
       statusEl.textContent = `正在從 FinMind 抓取 ${ticker} 三大法人籌碼...`;
       try {
         const end = new Date();
@@ -2345,6 +2401,7 @@ function doPost(e) {
 
         const dates = Object.keys(byDate).sort().slice(-15);
         state.chipsByCode[ticker] = {
+          fetchedDate: getTodayStr(),
           labels: dates.map(d => d.slice(5)),
           foreign: dates.map(d => byDate[d].foreign),
           trust: dates.map(d => byDate[d].trust),
@@ -2709,12 +2766,19 @@ function doPost(e) {
       const statusLine = document.getElementById('sync-status-line');
       statusLine.textContent = includeAllHot
         ? '正在掃描 28 檔熱門股 1 年期日線並計算評分...'
-        : '正在自動更新大盤、匯率與持股/自選最新日線...';
+        : '正在更新持股／自選最新日線（優先使用雲端快取省額度）...';
 
-      await fetchTaiwanStockInfo();
-      await fetchMarketAndFutures();
+      if (Object.keys(STOCK_META).length < 100) {
+        await fetchTaiwanStockInfo();
+      }
+      const hasTopMacro = state.top100 && state.top100.macro && state.top100.macro.taiexSeries && state.top100.macro.marketChips;
+      if (hasTopMacro) {
+        applyMacroFromTop100(state.top100.macro);
+      } else {
+        await fetchMarketAndFutures();
+      }
 
-      const baseHot = includeAllHot ? HOT_POOL_CODES : ['0050', '0056', '00878', '2330', '2317', '2454', '2308', '2881', '2603'];
+      const baseHot = includeAllHot ? HOT_POOL_CODES : (state.portfolio.length === 0 && state.watchlist.length === 0 ? ['2330', '0050'] : []);
       const targetCodes = Array.from(new Set([
         ...state.portfolio.map(p => p.code),
         ...state.watchlist,
@@ -2861,12 +2925,23 @@ function doPost(e) {
           return;
         }
         showToast('正在更新持股最新收盤價...');
-        let ok = 0, fail = 0;
+        let ok = 0, fail = 0, skipped = 0;
+        const refDate = marketState.latestMarketDate;
         for (const h of state.portfolio) {
+          const cur = STOCK_DB[h.code];
+          if (cur && cur.isDaily && refDate && cur.lastDate === refDate) {
+            skipped++;
+            continue;
+          }
           try { await fetchFinMindPrice(h.code, 400); ok++; } catch (e) { fail++; }
         }
+        if (ok > 0) saveMarketCache();
         renderPortfolio();
-        showToast(fail === 0 ? `已更新 ${ok} 檔持股收盤價` : `更新 ${ok} 檔成功，${fail} 檔失敗`);
+        if (ok === 0 && fail === 0 && skipped > 0) {
+          showToast(`持股皆已是最新收盤價（${refDate}，0 次額度消耗）`);
+        } else {
+          showToast(fail === 0 ? `已更新 ${ok} 檔持股收盤價` : `更新 ${ok} 檔成功，${fail} 檔失敗`);
+        }
       });
 
       const bindNameHint = (inputId, hintId) => {
@@ -2953,12 +3028,20 @@ function doPost(e) {
       });
 
       document.getElementById('wl-fetch-all-btn').addEventListener('click', async () => {
-        showToast('正在抓取自選股最新收盤價...');
+        showToast('正在檢查並更新自選股最新收盤價...');
+        let ok = 0, skipped = 0;
+        const refDate = marketState.latestMarketDate;
         for (const c of state.watchlist) {
-          try { await fetchFinMindPrice(c, 400); } catch (e) {}
+          const cur = STOCK_DB[c];
+          if (cur && cur.isDaily && refDate && cur.lastDate === refDate) {
+            skipped++;
+            continue;
+          }
+          try { await fetchFinMindPrice(c, 400); ok++; } catch (e) {}
         }
+        if (ok > 0) saveMarketCache();
         renderWatchlist();
-        showToast('自選股最新收盤價已更新');
+        showToast(ok === 0 && skipped > 0 ? `自選股皆已是最新收盤價（${refDate}，0 次額度消耗）` : `已更新 ${ok} 檔自選股收盤價`);
       });
 
       if (window.lucide && typeof window.lucide.createIcons === 'function') {
@@ -3081,6 +3164,9 @@ function doPost(e) {
         const r100 = await fetch('./top100.json?t=' + Date.now());
         if (r100.ok) {
           state.top100 = await r100.json();
+          if (state.top100 && state.top100.macro) {
+            applyMacroFromTop100(state.top100.macro);
+          }
           if (state.activeTab === 'strategy') renderStrategy();
         }
       } catch (e) {}
