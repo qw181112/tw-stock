@@ -137,7 +137,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
-            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.1</span>
+            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.2</span>
           </div>
           <p id="sync-status-line" class="text-[11px] text-slate-500">正在同步最新 1 年期日線與大盤數據...</p>
         </div>
@@ -188,6 +188,28 @@
             <p id="thermo-rule-note" class="font-semibold text-slate-800 mt-1">個股嚴守支撐與停利；ETF 依長線位階分批配置</p>
           </div>
         </div>
+      </div>
+
+      <!-- 盤後戰報摘要（三則速覽） -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-indigo-600">📋 盤後戰報摘要（三則速覽）</span>
+              <span id="brief-source-badge" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">自動生成</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-0.5">依 BUY（≥80分且無警示）/ WATCH（60–79分）/ SKIP（&lt;60分）自動彙整</p>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button id="copy-brief-btn" type="button" class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold border border-indigo-200 transition-colors whitespace-nowrap">
+              複製戰報
+            </button>
+            <button id="toggle-brief-btn" type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium whitespace-nowrap">
+              收合
+            </button>
+          </div>
+        </div>
+        <div id="strategy-brief-body" class="space-y-3"></div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1111,6 +1133,9 @@ function doPost(e) {
             const closeN = Number(lastNight.close);
             const spreadN = Number(lastNight.spread || 0);
             const signN = spreadN > 0 ? '+' : '';
+            marketState.txNightClose = closeN;
+            marketState.txNightSpread = spreadN;
+            marketState.txNightDate = lastNight.date;
             document.getElementById('ticker-tx-night-price').textContent = closeN.toLocaleString('zh-TW');
             document.getElementById('ticker-tx-night-chg').textContent = `${signN}${spreadN}`;
             document.getElementById('ticker-tx-night-chg').className = `font-semibold tabular-nums ${spreadN >= 0 ? 'text-red-400' : 'text-emerald-400'}`;
@@ -1139,6 +1164,180 @@ function doPost(e) {
       } catch (e) {}
 
       return updatedItems;
+    }
+
+    let latestBriefText = '';
+
+    function renderStrategyBrief() {
+      const container = document.getElementById('strategy-brief-body');
+      const badgeEl = document.getElementById('brief-source-badge');
+      if (!container) return;
+
+      const hasTop100 = state.top100 && Array.isArray(state.top100.items) && state.top100.items.length > 0;
+      const pool = hasTop100
+        ? state.top100.items.map(it => ({
+            code: it.code,
+            name: it.name,
+            etfMode: Boolean(it.etfMode),
+            price: Number(it.price || 0),
+            chgPct: Number(it.chgPct || 0),
+            aboveMa20: Boolean(it.aboveMa20),
+            score: Number(it.score || 0),
+            volSignal: it.volSignal || '',
+            safeBuyLow: it.safeBuyLow,
+            safeBuyHigh: it.safeBuyHigh,
+            targetSell: it.targetSell,
+            stopLoss: it.stopLoss,
+            reasonText: it.reasonText || ''
+          }))
+        : Object.values(STOCK_DB).map(s => {
+            const a = generateStockAnalysis(s);
+            const chgPct = s.price > 0 && s.chg !== undefined ? Number(((s.chg / (s.price - s.chg)) * 100).toFixed(2)) : 0;
+            return {
+              code: s.code,
+              name: s.name,
+              etfMode: a.etfMode,
+              price: Number(s.price || 0),
+              chgPct,
+              aboveMa20: s.ma20 ? s.price >= s.ma20 : false,
+              score: Number(a.score || 0),
+              volSignal: '',
+              safeBuyLow: a.safeBuyLow,
+              safeBuyHigh: a.safeBuyHigh,
+              targetSell: a.targetSell,
+              stopLoss: a.stopLoss,
+              reasonText: a.reasonText || ''
+            };
+          });
+
+      if (badgeEl) {
+        const refDate = hasTop100 ? (state.top100.generatedAt || state.top100.items[0].lastDate || '') : (marketState.latestMarketDate || '');
+        badgeEl.textContent = hasTop100 ? `Top 100 · ${refDate.slice(0, 10)}` : `備用池 (${pool.length} 檔)`;
+      }
+
+      const buyItems = [];
+      const watchItems = [];
+      const skipItems = [];
+      pool.forEach(item => {
+        const hasWarn = item.volSignal && item.volSignal.includes('⚠️');
+        if (item.score >= 80 && !hasWarn) buyItems.push(item);
+        else if (item.score >= 60) watchItems.push(item);
+        else skipItems.push(item);
+      });
+
+      const br = hasTop100 && state.top100.breadth ? state.top100.breadth : null;
+      const total = br ? br.total : pool.length;
+      const upCount = br ? br.upCount : pool.filter(x => x.chgPct > 0).length;
+      const aboveMa20Count = br ? br.aboveMa20Count : pool.filter(x => x.aboveMa20).length;
+      const avgChgPct = br
+        ? br.avgChgPct
+        : (pool.length ? Number((pool.reduce((acc, x) => acc + x.chgPct, 0) / pool.length).toFixed(2)) : 0);
+      const ma20Ratio = total > 0 ? aboveMa20Count / total : 0;
+
+      const taiexSign = marketState.taiexSpread >= 0 ? '+' : '';
+      const taiexFilterIcon = ma20Ratio < 0.25 ? '🔴' : (ma20Ratio < 0.5 ? '🟡' : '🟢');
+      const taiexText = `加權 ${marketState.taiexClose.toLocaleString('zh-TW')}（${taiexSign}${marketState.taiexSpread}）`;
+
+      let nightFilterIcon = '⚪';
+      let nightText = '夜盤尚未載入（可點右上角盤後更新）';
+      let nightPct = null;
+      if (typeof marketState.txNightClose === 'number' && marketState.txNightClose > 0) {
+        const sp = Number(marketState.txNightSpread || 0);
+        const prev = marketState.txNightClose - sp;
+        nightPct = prev > 0 ? Number(((sp / prev) * 100).toFixed(2)) : 0;
+        const nSign = sp >= 0 ? '+' : '';
+        if (nightPct <= -1.0) nightFilterIcon = '🔴';
+        else if (nightPct >= 0.5) nightFilterIcon = '🟢';
+        else nightFilterIcon = '🟡';
+        const mood = nightPct <= -1.0 ? '偏空・逆風' : (nightPct >= 0.5 ? '偏多・順風' : '平盤震盪');
+        nightText = `夜盤 ${marketState.txNightClose.toLocaleString('zh-TW')}（${nSign}${sp} / ${nSign}${nightPct}%，${mood}）`;
+      } else {
+        const sSign = marketState.txSpread >= 0 ? '+' : '';
+        nightFilterIcon = marketState.txSpread >= 0 ? '🟢' : '🟡';
+        nightText = `台指日盤價差 ${sSign}${marketState.txSpread} 點`;
+      }
+
+      const moodIcon = ma20Ratio < 0.25 ? '🔴 偏空' : (ma20Ratio < 0.5 ? '🟡 震盪' : '🟢 偏多');
+      const avgSign = avgChgPct >= 0 ? '+' : '';
+
+      const focusPool = [...buyItems, ...watchItems].sort((a, b) => b.score - a.score);
+      const topList = (focusPool.length > 0 ? focusPool : [...pool].sort((a, b) => b.score - a.score)).slice(0, 6);
+
+      let adviceTone = 'bg-amber-50 border-amber-200 text-amber-900';
+      let adviceTitle = '🟡 震盪控管建議';
+      let adviceBody = `市場站上月線比例 ${aboveMa20Count}/${total} 檔，搭配 USD/TWD ${marketState.usdTwd.toFixed(3)}，建議維持 50%–65% 適中水位；個股嚴守停損與支撐區間分批操作，不追高。`;
+      if (ma20Ratio < 0.2 || (nightPct !== null && nightPct <= -1.5)) {
+        adviceTone = 'bg-red-50 border-red-200 text-red-900';
+        adviceTitle = '🔴 保守觀望建議';
+        adviceBody = `目前僅 ${aboveMa20Count}/${total} 檔站上月線${nightPct !== null ? `、夜盤變動 ${nightPct >= 0 ? '+' : ''}${nightPct}%` : ''}，短線賣壓偏重。建議空手或低水位觀望、不急著接刀，等開盤消化賣壓並出現止跌訊號後再分批評估。`;
+      } else if (ma20Ratio >= 0.55 && (nightPct === null || nightPct >= 0)) {
+        adviceTone = 'bg-emerald-50 border-emerald-200 text-emerald-900';
+        adviceTitle = '🟢 順勢布局建議';
+        adviceBody = `站上月線達 ${aboveMa20Count}/${total} 檔且均漲 ${avgSign}${avgChgPct}%，多方結構穩健。可優先從 BUY / WATCH 清單中挑選無量價警示標的，依建議區間分批進場。`;
+      }
+
+      const focusRowsHtml = topList.map(item => {
+        const isBuy = item.score >= 80 && !(item.volSignal && item.volSignal.includes('⚠️'));
+        const tagCls = isBuy ? 'bg-red-100 text-red-700' : (item.score >= 60 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600');
+        const tagLabel = isBuy ? 'BUY' : (item.score >= 60 ? 'WATCH' : 'SKIP');
+        const pricePlan = item.etfMode
+          ? `逢低區 ${item.safeBuyLow}~${item.safeBuyHigh}`
+          : `損 ${item.stopLoss} / 標 ${item.targetSell}`;
+        return `
+          <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs py-1 border-b border-slate-100 last:border-b-0">
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${tagCls}">${tagLabel}</span>
+            <span class="font-bold text-slate-900">${item.code} ${item.name}</span>
+            <span class="text-slate-500">(${item.score}分)</span>
+            <span class="text-slate-400">｜</span>
+            <span class="font-semibold text-slate-800 tabular-nums">${item.price.toLocaleString('zh-TW')} → ${pricePlan}</span>
+            <span class="text-slate-400">｜</span>
+            <span class="text-slate-600">${item.reasonText}</span>
+          </div>`;
+      }).join('');
+
+      container.innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
+          <div class="lg:col-span-5 rounded-xl bg-slate-50 border border-slate-200 p-3.5 space-y-1.5 text-xs">
+            <p class="font-bold text-slate-800">第一則 — 市場總覽</p>
+            <p class="font-semibold text-slate-900">掃描 ${total} 檔：<span class="text-red-600">BUY ${buyItems.length}</span> ｜ <span class="text-amber-700">WATCH ${watchItems.length}</span> ｜ <span class="text-slate-500">SKIP ${skipItems.length}</span></p>
+            <p class="text-slate-700">大盤濾鏡：${taiexFilterIcon} ${taiexText}</p>
+            <p class="text-slate-700">夜盤濾鏡：${nightFilterIcon} ${nightText}</p>
+            <p class="text-slate-700">市場氛圍：${moodIcon}（均漲 ${avgSign}${avgChgPct}% ｜ ${upCount}/${total} 上漲 ｜ ${aboveMa20Count}/${total} 站上月線）</p>
+          </div>
+
+          <div class="lg:col-span-7 rounded-xl bg-slate-50 border border-slate-200 p-3.5 space-y-1">
+            <p class="font-bold text-slate-800 text-xs mb-1">第二則 — 焦點標的（TOP ${topList.length}）</p>
+            <div>${focusRowsHtml || '<p class="text-xs text-slate-400">暫無資料</p>'}</div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border p-3.5 text-xs space-y-1 ${adviceTone}">
+          <p class="font-bold">${adviceTitle}（第三則 — 操作建議）</p>
+          <p class="leading-relaxed">${adviceBody}</p>
+        </div>
+      `;
+
+      const focusPlain = topList.map(item => {
+        const plan = item.etfMode
+          ? `逢低區 ${item.safeBuyLow}~${item.safeBuyHigh}`
+          : `損 ${item.stopLoss} / 標 ${item.targetSell}`;
+        return `${item.code} ${item.name} (${item.score}分)｜${item.price} → ${plan}｜${item.reasonText}`;
+      }).join('\n');
+
+      latestBriefText = [
+        `📈 盤後戰報摘要（掃描 ${total} 檔）`,
+        `第一則 — 市場總覽`,
+        `掃描 ${total} 檔：BUY ${buyItems.length} ｜ WATCH ${watchItems.length} ｜ SKIP ${skipItems.length}`,
+        `大盤濾鏡：${taiexFilterIcon} ${taiexText}`,
+        `夜盤濾鏡：${nightFilterIcon} ${nightText}`,
+        `市場氛圍：${moodIcon}（均漲 ${avgSign}${avgChgPct}% ｜ ${upCount}/${total} 上漲 ｜ ${aboveMa20Count}/${total} 站上月線）`,
+        ``,
+        `第二則 — 焦點標的（TOP ${topList.length}）`,
+        focusPlain,
+        ``,
+        `第三則 — 操作建議`,
+        adviceBody
+      ].join('\n');
     }
 
     // ==================== RENDER TAB 1: 明日策略總表 ====================
@@ -1183,6 +1382,8 @@ function doPost(e) {
         document.getElementById('thermo-rule-note').textContent = `市場廣度：均漲 ${signBr}${br.avgChgPct}% ｜ ${br.upCount}/${br.total} 檔收紅 ｜ ${br.aboveMa20Count}/${br.total} 檔站上月線`;
       }
 
+      renderStrategyBrief();
+
       const buyList = document.getElementById('strategy-buy-list');
       buyList.innerHTML = '';
 
@@ -1196,15 +1397,15 @@ function doPost(e) {
             const el = document.createElement('div');
             el.className = 'rounded-xl border border-slate-200 p-3.5 hover:bg-slate-50 space-y-1.5';
             el.innerHTML = `
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <div class="flex items-center gap-1.5 flex-wrap">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
                   <span class="font-bold text-sm text-slate-900">${item.code} ${item.name}</span>
                   <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${scoreCls}">適合度 ${item.score} 分</span>
                   <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">${item.sector}</span>
                   ${item.volSignal ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${item.volSignal.includes('⚠️') ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}">${item.volSignal}</span>` : ''}
                   <span class="text-[10px] text-slate-400">${item.lastDate} · 量 ${Number(item.volumeLots || 0).toLocaleString('zh-TW')}張</span>
                 </div>
-                <span class="text-sm font-bold text-slate-900 tabular-nums">現價 ${Number(item.price).toLocaleString('zh-TW')} 元</span>
+                <span class="text-sm font-bold text-slate-900 tabular-nums shrink-0 whitespace-nowrap">現價 ${Number(item.price).toLocaleString('zh-TW')} 元</span>
               </div>
               <div class="text-xs text-emerald-700 font-bold">
                 ${item.etfMode ? '定期定額 / 逢低加碼參考區' : '建議分批買點區間'}：${item.safeBuyLow} ～ ${item.safeBuyHigh} 元
@@ -1234,14 +1435,14 @@ function doPost(e) {
           const item = document.createElement('div');
           item.className = 'rounded-xl border border-slate-200 p-3.5 hover:bg-slate-50 space-y-1.5';
           item.innerHTML = `
-            <div class="flex items-center justify-between gap-2 flex-wrap">
-              <div class="flex items-center gap-1.5 flex-wrap">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
                 <span class="font-bold text-sm text-slate-900">${s.code} ${s.name}</span>
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${scoreCls}">適合度 ${a.score} 分</span>
                 <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">${s.sector}</span>
                 ${staleWarn}
               </div>
-              <span class="text-sm font-bold text-slate-900 tabular-nums">現價 ${s.price.toLocaleString('zh-TW')} 元</span>
+              <span class="text-sm font-bold text-slate-900 tabular-nums shrink-0 whitespace-nowrap">現價 ${s.price.toLocaleString('zh-TW')} 元</span>
             </div>
             <div class="text-xs text-emerald-700 font-bold">
               ${a.etfMode ? '定期定額 / 逢低加碼參考區' : '建議分批買點區間'}：${a.safeBuyLow} ～ ${a.safeBuyHigh} 元
@@ -2360,6 +2561,27 @@ function doPost(e) {
         });
       };
 
+      const copyBriefBtn = document.getElementById('copy-brief-btn');
+      if (copyBriefBtn) {
+        copyBriefBtn.addEventListener('click', async () => {
+          if (!latestBriefText) return;
+          try {
+            await navigator.clipboard.writeText(latestBriefText);
+            const orig = copyBriefBtn.textContent;
+            copyBriefBtn.textContent = '已複製 ✓';
+            setTimeout(() => { copyBriefBtn.textContent = orig; }, 1800);
+          } catch (e) {}
+        });
+      }
+      const toggleBriefBtn = document.getElementById('toggle-brief-btn');
+      if (toggleBriefBtn) {
+        toggleBriefBtn.addEventListener('click', () => {
+          const body = document.getElementById('strategy-brief-body');
+          if (!body) return;
+          const hidden = body.classList.toggle('hidden');
+          toggleBriefBtn.textContent = hidden ? '展開' : '收合';
+        });
+      }
       document.getElementById('open-top100-btn').addEventListener('click', () => {
         renderTop100Modal();
         document.getElementById('top100-modal').classList.remove('hidden');
