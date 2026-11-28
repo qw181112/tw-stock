@@ -137,7 +137,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
-            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.4</span>
+            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.5</span>
           </div>
           <p id="sync-status-line" class="text-[11px] text-slate-500">正在同步最新 1 年期日線與大盤數據...</p>
         </div>
@@ -679,7 +679,8 @@
       txSpread: 54.92,
       usdTwd: 32.963,
       latestMarketDate: '2026-11-27',
-      marketChips: null
+      marketChips: null,
+      taiexSeries: null
     };
 
     const state = {
@@ -1084,6 +1085,55 @@ function doPost(e) {
       return STOCK_DB[ticker];
     }
 
+    async function fetchTaiexAndMarginSeries() {
+      const end = new Date();
+      const start30 = new Date();
+      start30.setDate(end.getDate() - 30);
+      const start30Str = start30.toISOString().slice(0, 10);
+      let taiexRows = [];
+      let marginMap = {};
+
+      try {
+        const resTaiex = await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=TAIEX&start_date=${start30Str}`);
+        if (resTaiex.ok) {
+          const jTaiex = await resTaiex.json();
+          taiexRows = (jTaiex.data || []).filter(r => Number(r.close) > 0 && r.date).sort((a, b) => a.date.localeCompare(b.date));
+        }
+      } catch (e) {}
+
+      try {
+        const resMargin = await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockTotalMarginPurchaseShortSale&start_date=${start30Str}`);
+        if (resMargin.ok) {
+          const jMargin = await resMargin.json();
+          (jMargin.data || []).forEach(r => {
+            if (r.date && r.name === 'MarginPurchaseMoney' && Number(r.TodayBalance) > 0) {
+              const rawVal = Number(r.TodayBalance);
+              const billionVal = rawVal > 1e10 ? rawVal / 1e8 : rawVal / 1e5;
+              marginMap[r.date] = Number(billionVal.toFixed(2));
+            }
+          });
+        }
+      } catch (e) {}
+
+      if (taiexRows.length > 0) {
+        const recent15 = taiexRows.slice(-15);
+        const dates = recent15.map(r => r.date);
+        const closes = recent15.map(r => Number(r.close));
+        let lastMargin = null;
+        const marginBillion = dates.map(d => {
+          if (marginMap[d] !== undefined) lastMargin = marginMap[d];
+          return lastMargin;
+        });
+        marketState.taiexSeries = {
+          dates,
+          labels: dates.map(d => d.slice(5)),
+          closes,
+          marginBillion
+        };
+      }
+      return taiexRows;
+    }
+
     async function fetchMarketAndFutures() {
       const end = new Date();
       const start = new Date();
@@ -1091,30 +1141,24 @@ function doPost(e) {
       const startStr = start.toISOString().slice(0, 10);
       let updatedItems = [];
 
-      try {
-        const resTaiex = await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=TAIEX&start_date=${startStr}`);
-        if (resTaiex.ok) {
-          const jTaiex = await resTaiex.json();
-          const rows = (jTaiex.data || []).sort((a, b) => a.date.localeCompare(b.date));
-          if (rows.length > 0) {
-            const last = rows[rows.length - 1];
-            const close = Number(last.close);
-            const spread = Number(last.spread || 0);
-            marketState.taiexClose = close;
-            marketState.taiexSpread = spread;
-            marketState.latestMarketDate = last.date;
-            const sign = spread > 0 ? '+' : '';
-            document.getElementById('ticker-taiex-price').textContent = close.toLocaleString('zh-TW');
-            document.getElementById('ticker-taiex-chg').textContent = `${sign}${spread.toFixed(2)}`;
-            document.getElementById('ticker-taiex-chg').className = `font-semibold tabular-nums ${spread >= 0 ? 'text-red-400' : 'text-emerald-400'}`;
-            document.getElementById('taiex-card-close').textContent = close.toLocaleString('zh-TW');
-            const moneyBillion = last.Trading_money ? ` · 量 ${(Number(last.Trading_money) / 1e8).toFixed(1)} 億` : '';
-            document.getElementById('taiex-card-chg').textContent = `${sign}${spread.toFixed(2)}${moneyBillion} (${last.date})`;
-            document.getElementById('taiex-card-chg').className = `text-[11px] font-semibold ${spread >= 0 ? 'text-red-600' : 'text-emerald-600'}`;
-            updatedItems.push('市加權');
-          }
-        }
-      } catch (e) {}
+      const rows = await fetchTaiexAndMarginSeries();
+      if (rows.length > 0) {
+        const last = rows[rows.length - 1];
+        const close = Number(last.close);
+        const spread = Number(last.spread || 0);
+        marketState.taiexClose = close;
+        marketState.taiexSpread = spread;
+        marketState.latestMarketDate = last.date;
+        const sign = spread > 0 ? '+' : '';
+        document.getElementById('ticker-taiex-price').textContent = close.toLocaleString('zh-TW');
+        document.getElementById('ticker-taiex-chg').textContent = `${sign}${spread.toFixed(2)}`;
+        document.getElementById('ticker-taiex-chg').className = `font-semibold tabular-nums ${spread >= 0 ? 'text-red-400' : 'text-emerald-400'}`;
+        document.getElementById('taiex-card-close').textContent = close.toLocaleString('zh-TW');
+        const moneyBillion = last.Trading_money ? ` · 量 ${(Number(last.Trading_money) / 1e8).toFixed(1)} 億` : '';
+        document.getElementById('taiex-card-chg').textContent = `${sign}${spread.toFixed(2)}${moneyBillion} (${last.date})`;
+        document.getElementById('taiex-card-chg').className = `text-[11px] font-semibold ${spread >= 0 ? 'text-red-600' : 'text-emerald-600'}`;
+        updatedItems.push('市加權與融資');
+      }
 
       try {
         const resTx = await fetch(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanFuturesDaily&data_id=TX&start_date=${startStr}`);
@@ -1533,26 +1577,75 @@ function doPost(e) {
         const goBtn = document.getElementById('strat-go-pf-btn');
         if (goBtn) goBtn.addEventListener('click', () => switchTab('portfolio'));
       } else {
-        state.portfolio.forEach(h => {
+        const pfItems = state.portfolio.map(h => {
           const s = STOCK_DB[h.code];
           const meta = STOCK_META[h.code] || {};
           const displayName = s ? s.name : (meta.name || '');
           const sector = s ? s.sector : (meta.sector || '台股');
           const currPrice = s ? s.price : h.avgCost;
+          const val = (Number(h.shares) || 0) * currPrice;
+          return { h, s, displayName, sector, currPrice, val };
+        });
+        const totalPfVal = pfItems.reduce((acc, x) => acc + x.val, 0);
+
+        if (pfItems.length >= 2 && totalPfVal > 0) {
+          const sectorTotals = {};
+          let maxItem = pfItems[0];
+          pfItems.forEach(x => {
+            if (x.val > maxItem.val) maxItem = x;
+            sectorTotals[x.sector] = (sectorTotals[x.sector] || 0) + x.val;
+          });
+          const maxPct = (maxItem.val / totalPfVal) * 100;
+          let maxSecName = '';
+          let maxSecPct = 0;
+          Object.keys(sectorTotals).forEach(sec => {
+            const pSec = (sectorTotals[sec] / totalPfVal) * 100;
+            if (pSec > maxSecPct) {
+              maxSecPct = pSec;
+              maxSecName = sec;
+            }
+          });
+
+          const warnings = [];
+          if (maxPct > 40) warnings.push(`單一標的 ${maxItem.h.code} ${maxItem.displayName} 佔比達 ${maxPct.toFixed(1)}%（>40%）`);
+          if (maxSecPct > 70) warnings.push(`單一族群「${maxSecName}」佔比達 ${maxSecPct.toFixed(1)}%（>70%）`);
+
+          const alertDiv = document.createElement('div');
+          if (warnings.length > 0) {
+            alertDiv.className = 'rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900 font-medium';
+            alertDiv.textContent = `⚠️ 集中度提醒：${warnings.join('；')}，建議留意波動風險。`;
+          } else {
+            alertDiv.className = 'rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800 font-medium';
+            alertDiv.textContent = `✓ 持股分散度尚可（最大單一標的 ${maxItem.h.code} 佔 ${maxPct.toFixed(1)}%）`;
+          }
+          sellList.appendChild(alertDiv);
+        }
+
+        pfItems.forEach(({ h, s, displayName, sector, currPrice, val }) => {
           const etfMode = isEtf(h.code, sector);
           const a = s ? generateStockAnalysis(s) : null;
           const roi = h.avgCost > 0 ? ((currPrice - h.avgCost) / h.avgCost) * 100 : 0;
           const roiCls = roi >= 0 ? 'text-red-600' : 'text-emerald-600';
+          const weightPct = totalPfVal > 0 ? ((val / totalPfVal) * 100).toFixed(1) : null;
+          const weightBadge = weightPct ? `<span class="text-[11px] text-slate-400 font-normal">佔比 ${weightPct}%</span>` : '';
 
           const item = document.createElement('div');
           item.className = 'rounded-xl border border-slate-200 p-3.5 space-y-1.5';
 
           if (etfMode) {
+            let statusBadge = '<span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">🔵 長線多頭續抱</span>';
+            if (a && currPrice <= a.safeBuyHigh) {
+              statusBadge = '<span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">🟢 進入逢低加碼區</span>';
+            } else if (a && a.maLong && currPrice < a.maLong) {
+              statusBadge = '<span class="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">🟡 年線下築底分批</span>';
+            }
+
             item.innerHTML = `
-              <div class="flex items-center justify-between gap-2">
-                <div class="flex items-center gap-1.5">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-1.5 flex-wrap">
                   <span class="font-bold text-sm text-slate-900">${h.code} ${displayName}</span>
-                  <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">ETF 長期持有</span>
+                  ${statusBadge}
+                  ${weightBadge}
                 </div>
                 <span class="text-xs font-bold tabular-nums ${roiCls}">${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%</span>
               </div>
@@ -1565,12 +1658,26 @@ function doPost(e) {
             const targetSell = a ? a.targetSell : Number((h.avgCost * 1.1).toFixed(1));
             const stopLoss = a ? a.stopLoss : Number((h.avgCost * 0.93).toFixed(1));
             let actionHint = '續抱觀察，依均線支撐與壓力操作';
-            if (currPrice >= targetSell * 0.98) actionHint = '接近波段壓力區，明日可考慮分批獲利了結';
-            else if (currPrice <= stopLoss) actionHint = '已跌破防守參考價，明日留意反彈減碼';
+            let statusBadge = '<span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">🔵 站穩月線續抱</span>';
+
+            if (currPrice <= stopLoss) {
+              actionHint = '已跌破防守參考價，明日留意反彈減碼';
+              statusBadge = '<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 text-[10px] font-bold">🔴 已跌破防守價</span>';
+            } else if (currPrice >= targetSell * 0.97) {
+              actionHint = '接近波段壓力區，明日可考慮分批獲利了結';
+              statusBadge = '<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold">🟢 接近停利 (<3%)</span>';
+            } else if (a && a.maShort && currPrice < a.maShort) {
+              actionHint = '目前位於月線下方整理，留意防守價支撐';
+              statusBadge = '<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold">🟡 跌破月線警戒</span>';
+            }
 
             item.innerHTML = `
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-bold text-sm text-slate-900">${h.code} ${displayName}（均價 ${h.avgCost}）</span>
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="font-bold text-sm text-slate-900">${h.code} ${displayName}（均價 ${h.avgCost}）</span>
+                  ${statusBadge}
+                  ${weightBadge}
+                </div>
                 <span class="text-xs font-bold tabular-nums ${roiCls}">${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%</span>
               </div>
               <div class="grid grid-cols-2 gap-2 text-xs pt-0.5">
@@ -1886,13 +1993,16 @@ function doPost(e) {
         sel.appendChild(opt);
       });
 
+      const taiexSrc = (marketState.taiexSeries && Array.isArray(marketState.taiexSeries.labels) && marketState.taiexSeries.labels.length > 0)
+        ? marketState.taiexSeries
+        : TAIEX_SERIES;
       if (charts.taiex) charts.taiex.destroy();
       charts.taiex = new Chart(document.getElementById('taiexChart').getContext('2d'), {
         data: {
-          labels: TAIEX_SERIES.labels,
+          labels: taiexSrc.labels,
           datasets: [
-            { type: 'line', label: '市加權指數', data: TAIEX_SERIES.closes, borderColor: '#dc2626', borderWidth: 2.5, tension: 0.2, yAxisID: 'y' },
-            { type: 'bar', label: '上市融資餘額(億)', data: TAIEX_SERIES.marginBillion, backgroundColor: 'rgba(37, 99, 235, 0.2)', yAxisID: 'y1' }
+            { type: 'line', label: '市加權指數', data: taiexSrc.closes, borderColor: '#dc2626', borderWidth: 2.5, tension: 0.2, yAxisID: 'y' },
+            { type: 'bar', label: '上市融資餘額(億)', data: taiexSrc.marginBillion, backgroundColor: 'rgba(37, 99, 235, 0.2)', yAxisID: 'y1' }
           ]
         },
         options: {
@@ -2818,6 +2928,14 @@ function doPost(e) {
             if (ok) {
               saveMarketCache();
               if (state.activeTab === 'indicators') renderMarketChipsChart();
+            }
+          });
+        }
+        if (!marketState.taiexSeries || !Array.isArray(marketState.taiexSeries.labels) || marketState.taiexSeries.labels.length === 0) {
+          fetchTaiexAndMarginSeries().then(rows => {
+            if (rows && rows.length > 0) {
+              saveMarketCache();
+              if (state.activeTab === 'indicators') renderIndicators();
             }
           });
         }
