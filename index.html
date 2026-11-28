@@ -137,7 +137,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
-            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.0</span>
+            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.1</span>
           </div>
           <p id="sync-status-line" class="text-[11px] text-slate-500">正在同步最新 1 年期日線與大盤數據...</p>
         </div>
@@ -1147,7 +1147,16 @@ function doPost(e) {
       const badgeEl = document.getElementById('thermo-badge');
       const barEl = document.getElementById('thermo-bar');
 
-      if (marketState.usdTwd >= 32.9) {
+      const br = state.top100 && state.top100.breadth ? state.top100.breadth : null;
+      const ma20Ratio = br && br.total > 0 ? br.aboveMa20Count / br.total : null;
+
+      if (ma20Ratio !== null && ma20Ratio < 0.2) {
+        titleEl.textContent = `市場偏空 · 站上月線僅 ${br.aboveMa20Count}/${br.total} 檔，建議觀望不接刀`;
+        badgeEl.textContent = '空手 / 低水位警戒';
+        badgeEl.className = 'px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200';
+        barEl.style.width = '25%';
+        barEl.className = 'h-3 rounded-full bg-red-500 transition-all duration-300';
+      } else if (marketState.usdTwd >= 32.9) {
         titleEl.textContent = '震盪警戒 · 建議控管個股水位 (50%–65%)';
         badgeEl.textContent = '台幣逼近 33 元警戒';
         badgeEl.className = 'px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200';
@@ -1169,6 +1178,10 @@ function doPost(e) {
 
       document.getElementById('thermo-taiex-note').textContent = `市加權 ${marketState.taiexClose.toLocaleString('zh-TW')} · 台指價差 ${marketState.txSpread >= 0 ? '+' : ''}${marketState.txSpread}`;
       document.getElementById('thermo-fx-note').textContent = `USD/TWD ${marketState.usdTwd.toFixed(3)}（${marketState.usdTwd >= 32.9 ? '接近 33 元外資匯出警戒區' : '匯率尚屬穩定'}）`;
+      if (br && br.total > 0) {
+        const signBr = br.avgChgPct >= 0 ? '+' : '';
+        document.getElementById('thermo-rule-note').textContent = `市場廣度：均漲 ${signBr}${br.avgChgPct}% ｜ ${br.upCount}/${br.total} 檔收紅 ｜ ${br.aboveMa20Count}/${br.total} 檔站上月線`;
+      }
 
       const buyList = document.getElementById('strategy-buy-list');
       buyList.innerHTML = '';
@@ -1188,6 +1201,7 @@ function doPost(e) {
                   <span class="font-bold text-sm text-slate-900">${item.code} ${item.name}</span>
                   <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${scoreCls}">適合度 ${item.score} 分</span>
                   <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">${item.sector}</span>
+                  ${item.volSignal ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${item.volSignal.includes('⚠️') ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}">${item.volSignal}</span>` : ''}
                   <span class="text-[10px] text-slate-400">${item.lastDate} · 量 ${Number(item.volumeLots || 0).toLocaleString('zh-TW')}張</span>
                 </div>
                 <span class="text-sm font-bold text-slate-900 tabular-nums">現價 ${Number(item.price).toLocaleString('zh-TW')} 元</span>

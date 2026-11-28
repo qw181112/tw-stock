@@ -100,11 +100,25 @@ def analyze_stock(code, fallback_name, meta, start_date):
     closes = [float(x["close"]) for x in rows]
     highs = [float(x.get("max") or x["close"]) for x in rows]
     lows = [float(x.get("min") or x["close"]) for x in rows]
+    vols = [float(x.get("Trading_Volume", 0)) for x in rows]
     curr = closes[-1]
     prev = closes[-2]
     chg = round(curr - prev, 2)
     chg_pct = round((chg / prev) * 100, 2) if prev else 0.0
-    vol_lots = round(float(rows[-1].get("Trading_Volume", 0)) / 1000)
+    vol_lots = round(vols[-1] / 1000)
+
+    # Volume-price signal (today vs prior 5-day avg volume)
+    vol_signal = ""
+    if len(vols) >= 6:
+        avg5_vol = sum(vols[-6:-1]) / 5.0
+        if avg5_vol > 0:
+            ratio = vols[-1] / avg5_vol
+            if ratio >= 1.5 and chg_pct <= 0.5:
+                vol_signal = f"⚠️ 放量滯漲 ({ratio:.1f}x)"
+            elif ratio >= 1.5 and chg_pct > 0.5:
+                vol_signal = f"放量上攻 ({ratio:.1f}x)"
+            elif ratio <= 0.7:
+                vol_signal = f"縮量整理 ({ratio:.1f}x)"
 
     ma20 = calc_ma(closes, 20)
     ma60 = calc_ma(closes, 60)
@@ -160,7 +174,9 @@ def analyze_stock(code, fallback_name, meta, start_date):
     if ma60:
         reasons.append(f"守住季線 ({ma60}) 支撐" if curr >= ma60 else f"回測季線 ({ma60}) 下方")
     reasons.append(f"KD 黃金交叉 ({k_val}/{d_val})" if k_val > d_val else f"KD 偏弱整理 ({k_val}/{d_val})")
-    if rsi is not None:
+    if vol_signal:
+        reasons.append(vol_signal)
+    elif rsi is not None:
         reasons.append(f"RSI {rsi}")
 
     trend_label = "區間整理"
@@ -181,6 +197,8 @@ def analyze_stock(code, fallback_name, meta, start_date):
         "chg": chg,
         "chgPct": chg_pct,
         "volumeLots": vol_lots,
+        "volSignal": vol_signal,
+        "aboveMa20": bool(ma20 and curr >= ma20),
         "lastDate": rows[-1]["date"],
         "ma20": ma20,
         "ma60": ma60,
@@ -216,14 +234,22 @@ def main():
         time.sleep(0.35)
 
     results.sort(key=lambda x: x["score"], reverse=True)
+    total = len(results)
+    breadth = {
+        "total": total,
+        "upCount": sum(1 for x in results if x["chg"] > 0),
+        "aboveMa20Count": sum(1 for x in results if x.get("aboveMa20")),
+        "avgChgPct": round(sum(x["chgPct"] for x in results) / total, 2) if total else 0.0,
+    }
     payload = {
         "updatedAt": now_tw.strftime("%Y-%m-%d %H:%M"),
-        "count": len(results),
+        "count": total,
+        "breadth": breadth,
         "items": results,
     }
     with open("top100.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-    print(f"Generated top100.json with {len(results)} stocks")
+    print(f"Generated top100.json with {total} stocks, breadth={breadth}")
 
 
 if __name__ == "__main__":
