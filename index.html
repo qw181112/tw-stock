@@ -137,7 +137,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <h1 class="text-sm sm:text-base font-bold text-slate-900 leading-tight">台股盤後復盤 & 明日策略助手</h1>
-            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.2</span>
+            <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold">v2.3</span>
           </div>
           <p id="sync-status-line" class="text-[11px] text-slate-500">正在同步最新 1 年期日線與大盤數據...</p>
         </div>
@@ -827,7 +827,8 @@ function doPost(e) {
           cacheDate: getTodayStr(),
           marketState,
           stocks: trimmedDb,
-          meta: STOCK_META
+          meta: STOCK_META,
+          chipsByCode: state.chipsByCode
         }));
       } catch (e) {}
     }
@@ -840,6 +841,7 @@ function doPost(e) {
         if (parsed.cacheDate !== getTodayStr() || !parsed.stocks) return false;
         Object.assign(marketState, parsed.marketState || {});
         if (parsed.meta) Object.assign(STOCK_META, parsed.meta);
+        if (parsed.chipsByCode) Object.assign(state.chipsByCode, parsed.chipsByCode);
         Object.keys(parsed.stocks).forEach(code => {
           STOCK_DB[code] = parsed.stocks[code];
         });
@@ -1833,6 +1835,8 @@ function doPost(e) {
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { tooltip: { mode: 'index', intersect: false } },
           scales: { y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false } } }
         }
       });
@@ -1854,7 +1858,12 @@ function doPost(e) {
             { label: s.isDaily ? '240MA(年線)' : 'MA12', data: a.maLongArr.slice(-sliceN), borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0 }
           ]
         },
-        options: { responsive: true, maintainAspectRatio: false }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { tooltip: { mode: 'index', intersect: false } }
+        }
       });
 
       const rsi = calcRSI(s.prices, Math.min(6, Math.max(2, s.prices.length - 1))).slice(-sliceN);
@@ -1870,7 +1879,13 @@ function doPost(e) {
             { label: 'RSI(6)', data: rsi, borderColor: '#7c3aed', borderWidth: 1.5, borderDash: [3, 3], pointRadius: 0 }
           ]
         },
-        options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { tooltip: { mode: 'index', intersect: false } },
+          scales: { y: { min: 0, max: 100 } }
+        }
       });
 
       renderChipsChart();
@@ -1902,7 +1917,12 @@ function doPost(e) {
             { label: '自營商(張)', data: chipData.dealer, backgroundColor: '#f59e0b' }
           ]
         },
-        options: { responsive: true, maintainAspectRatio: false }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { tooltip: { mode: 'index', intersect: false } }
+        }
       });
     }
 
@@ -1937,10 +1957,15 @@ function doPost(e) {
           trust: dates.map(d => byDate[d].trust),
           dealer: dates.map(d => byDate[d].dealer)
         };
+        saveMarketCache();
         renderChipsChart();
         showToast(`已載入 ${ticker} 三大法人買賣超`);
       } catch (e) {
-        statusEl.textContent = `無法取得 FinMind 籌碼資料（${e.message}）`;
+        const msg = String(e && e.message ? e.message : '');
+        const friendly = (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed'))
+          ? 'FinMind 暫時限流（每小時 300 次額度）或網路中斷，請稍候再試'
+          : msg;
+        statusEl.textContent = `無法取得 FinMind 籌碼資料（${friendly}）`;
       }
     }
 
